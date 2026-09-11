@@ -1,0 +1,103 @@
+[gd_scene format=3 uid="uid://pcbrrpm18unh"]
+
+[ext_resource type="PackedScene" uid="uid://c5a2lyggsnxev" path="res://scenes/raiden-shogun.tscn" id="1_o5qli"]
+[ext_resource type="Script" uid="uid://besoovd5n40ac" path="res://scripts/frame_character_camera.gd" id="2_cam"]
+[ext_resource type="Shader" uid="uid://cpo7r0lrj0q6q" path="res://shaders/genshin_toon.gdshader" id="3_toon"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
+sky_top_color = Color(0.45, 0.58, 0.92, 1)
+sky_horizon_color = Color(0.84, 0.78, 0.92, 1)
+ground_bottom_color = Color(0.22, 0.2, 0.3, 1)
+ground_horizon_color = Color(0.72, 0.68, 0.8, 1)
+sun_angle_max = 28.0
+sun_curve = 0.12
+
+[sub_resource type="Sky" id="Sky_main"]
+sky_material = SubResource("ProceduralSkyMaterial_sky")
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 2
+sky = SubResource("Sky_main")
+ambient_light_source = 2
+ambient_light_color = Color(0.82, 0.84, 0.92, 1)
+ambient_light_energy = 0.25
+tonemap_mode = 2
+tonemap_exposure = 0.9
+glow_intensity = 0.35
+glow_bloom = 0.08
+glow_hdr_threshold = 0.85
+fog_enabled = true
+fog_light_color = Color(0.72, 0.7, 0.86, 1)
+fog_density = 0.0012
+fog_aerial_perspective = 0.25
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ground"]
+render_priority = 0
+shader = ExtResource("3_toon")
+shader_parameter/albedo_color = Color(0.58, 0.54, 0.64, 1)
+shader_parameter/use_albedo_texture = false
+shader_parameter/texture_lod_bias = -0.75
+shader_parameter/alpha_scissor_threshold = 0.5
+shader_parameter/use_alpha_scissor = false
+shader_parameter/shadow_color = Color(0.48, 0.44, 0.62, 1)
+shader_parameter/shadow_threshold = 0.48
+shader_parameter/shadow_smoothness = 0.04
+shader_parameter/cast_shadow_softness = 0.2
+shader_parameter/light_intensity = 0.62
+shader_parameter/ambient_strength = 0.3
+shader_parameter/ambient_color = Color(0.78, 0.8, 0.9, 1)
+shader_parameter/specular_color = Color(1, 0.96, 0.92, 1)
+shader_parameter/specular_size = 48.0
+shader_parameter/specular_smoothness = 0.08
+shader_parameter/specular_strength = 0.0
+shader_parameter/use_anisotropic_specular = false
+shader_parameter/hair_flow_blend = 1.0
+shader_parameter/hair_spec_shift = 0.08
+shader_parameter/hair_spec_secondary = 0.4
+shader_parameter/hair_spec_secondary_shift = -0.12
+shader_parameter/hair_spec_secondary_size = 24.0
+shader_parameter/rim_color = Color(0.7, 0.78, 1, 1)
+shader_parameter/rim_power = 4.0
+shader_parameter/rim_strength = 0.0
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
+material = SubResource("ShaderMaterial_ground")
+size = Vector2(40, 40)
+
+[node name="Main" type="Node3D" unique_id=1020440606]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1905834855]
+environment = SubResource("Environment_main")
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=325026453]
+transform = Transform3D(0.7660444, -0.49240386, 0.4131766, 0, 0.6427876, 0.7660444, -0.6427876, -0.5868241, 0.49240386, 4, 8, 3)
+light_color = Color(1, 0.97, 0.92, 1)
+light_energy = 0.3
+light_angular_distance = 0.8
+shadow_enabled = true
+shadow_bias = 0.03
+shadow_normal_bias = 1.6
+shadow_blur = 2.2
+directional_shadow_mode = 1
+directional_shadow_split_1 = 0.12
+directional_shadow_split_2 = 0.35
+directional_shadow_max_distance = 28.0
+directional_shadow_pancake_size = 4.0
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1779279210]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5717056, 1.5, 2.8223019)
+current = true
+fov = 35.0
+script = ExtResource("2_cam")
+target_path = NodePath("../RaidenShogun")
+padding = 1.25
+height_bias = 0.12
+yaw_degrees = 24.0
+pitch_degrees = -6.0
+
+[node name="Ground" type="MeshInstance3D" parent="." unique_id=367872357]
+mesh = SubResource("PlaneMesh_ground")
+
+[node name="RaidenShogun" parent="." unique_id=1110029233 instance=ExtResource("1_o5qli")]
+transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0.6036525, 0, 0.21492863)
+outline_width = 3.0
