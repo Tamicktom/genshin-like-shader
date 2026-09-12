@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="ToonPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/toon_preset.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+shadow_color = Color(0.52, 0.42, 0.72, 1)
+shadow_threshold = 0.47
+shadow_smoothness = 0.025
+cast_shadow_softness = 0.2
+light_intensity = 0.7
+ambient_strength = 0.2
+ambient_color = Color(0.78, 0.8, 0.9, 1)
+specular_color = Color(0.78, 0.74, 0.92, 1)
+specular_size = 48.0
+specular_smoothness = 0.18
+specular_strength = 0.07
+use_anisotropic_specular = true
+hair_flow_blend = 1.0
+hair_spec_shift = 0.08
+hair_spec_secondary = 0.35
+hair_spec_secondary_shift = -0.14
+hair_spec_secondary_size = 18.0
+rim_color = Color(0.55, 0.5, 0.82, 1)
+rim_power = 5.0
+rim_strength = 0.04

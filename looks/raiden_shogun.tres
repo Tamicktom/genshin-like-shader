@@ -1,0 +1,68 @@
+[gd_resource type="Resource" script_class="CharacterLook" format=3 uid="uid://c2tjtsutmyrlb"]
+
+[ext_resource type="Script" uid="uid://dhgjj5pyqns1y" path="res://scripts/resources/character_look.gd" id="1_look"]
+[ext_resource type="Script" uid="uid://djexdxq4d2wq3" path="res://scripts/resources/look_slot.gd" id="2_slot"]
+[ext_resource type="Shader" uid="uid://cpo7r0lrj0q6q" path="res://shaders/genshin_toon.gdshader" id="3_toon"]
+[ext_resource type="Shader" uid="uid://bwsx4e1glch3x" path="res://shaders/genshin_outline.gdshader" id="4_outline"]
+[ext_resource type="Resource" path="res://materials/presets/face.tres" id="5_face"]
+[ext_resource type="Resource" path="res://materials/presets/hair.tres" id="6_hair"]
+[ext_resource type="Resource" path="res://materials/presets/weapon.tres" id="7_weapon"]
+[ext_resource type="Resource" path="res://materials/presets/metal.tres" id="8_metal"]
+[ext_resource type="Resource" path="res://materials/presets/cloth.tres" id="9_cloth"]
+
+[sub_resource type="Resource" id="slot_face"]
+script = ExtResource("2_slot")
+slot_name = "Face"
+name_patterns = PackedStringArray("*face*", "*eye*", "*teeth*")
+texture_patterns = PackedStringArray("*2_0.png", "*gltf_embedded_0*")
+preset = ExtResource("5_face")
+double_sided = true
+enable_outline = false
+
+[sub_resource type="Resource" id="slot_hair"]
+script = ExtResource("2_slot")
+slot_name = "Hair"
+name_patterns = PackedStringArray("*hair*")
+texture_patterns = PackedStringArray("*2_1.png", "*gltf_embedded_1*")
+preset = ExtResource("6_hair")
+double_sided = true
+
+[sub_resource type="Resource" id="slot_weapon"]
+script = ExtResource("2_slot")
+slot_name = "Weapon"
+name_patterns = PackedStringArray("*katana*")
+texture_patterns = PackedStringArray("*2_5.png", "*gltf_embedded_5*")
+preset = ExtResource("7_weapon")
+double_sided = true
+enable_outline = false
+
+[sub_resource type="Resource" id="slot_metal"]
+script = ExtResource("2_slot")
+slot_name = "Metal"
+name_patterns = PackedStringArray("*acc*")
+texture_patterns = PackedStringArray()
+preset = ExtResource("8_metal")
+
+[sub_resource type="Resource" id="slot_dress"]
+script = ExtResource("2_slot")
+slot_name = "Dress"
+name_patterns = PackedStringArray("*dress*")
+texture_patterns = PackedStringArray()
+preset = ExtResource("9_cloth")
+double_sided = true
+
+[sub_resource type="Resource" id="slot_body"]
+script = ExtResource("2_slot")
+slot_name = "Body"
+name_patterns = PackedStringArray("*body*")
+texture_patterns = PackedStringArray()
+preset = ExtResource("9_cloth")
+outline_depth_bias = 0.003
+
+[resource]
+script = ExtResource("1_look")
+display_name = "Raiden Shogun"
+toon_shader = ExtResource("3_toon")
+outline_shader = ExtResource("4_outline")
+slots = Array[ExtResource("2_slot")]([SubResource("slot_face"), SubResource("slot_hair"), SubResource("slot_weapon"), SubResource("slot_metal"), SubResource("slot_dress"), SubResource("slot_body")])
+fallback_preset = ExtResource("9_cloth")
