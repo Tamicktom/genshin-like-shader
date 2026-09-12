@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c0eftb3lgtlda"
-path="res://.godot/imported/screenshot.png-024a21af5d37bf0f0dd0e2bccdd149d0.ctex"
+uid="uid://6a8nxcmo6v6q"
+path="res://.godot/imported/发.png-3a45cab17ca98164ed4baf78601cb28f.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://screenshot.png"
-dest_files=["res://.godot/imported/screenshot.png-024a21af5d37bf0f0dd0e2bccdd149d0.ctex"]
+source_file="res://assets/ayaka/textures/发.png"
+dest_files=["res://.godot/imported/发.png-3a45cab17ca98164ed4baf78601cb28f.ctex"]
 
 [params]
 

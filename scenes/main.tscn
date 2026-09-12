@@ -39,10 +39,11 @@ shader_parameter/use_albedo_texture = false
 shader_parameter/texture_lod_bias = -0.75
 shader_parameter/alpha_scissor_threshold = 0.5
 shader_parameter/use_alpha_scissor = false
+shader_parameter/double_sided = false
 shader_parameter/shadow_color = Color(0.48, 0.44, 0.62, 1)
 shader_parameter/shadow_threshold = 0.48
 shader_parameter/shadow_smoothness = 0.04
-shader_parameter/cast_shadow_softness = 0.2
+shader_parameter/cast_shadow_softness = 0.32
 shader_parameter/light_intensity = 0.62
 shader_parameter/ambient_strength = 0.3
 shader_parameter/ambient_color = Color(0.78, 0.8, 0.9, 1)
@@ -73,19 +74,16 @@ environment = SubResource("Environment_main")
 transform = Transform3D(0.7660444, -0.49240386, 0.4131766, 0, 0.6427876, 0.7660444, -0.6427876, -0.5868241, 0.49240386, 4, 8, 3)
 light_color = Color(1, 0.97, 0.92, 1)
 light_energy = 0.3
-light_angular_distance = 0.8
 shadow_enabled = true
-shadow_bias = 0.03
-shadow_normal_bias = 1.6
-shadow_blur = 2.2
-directional_shadow_mode = 1
-directional_shadow_split_1 = 0.12
-directional_shadow_split_2 = 0.35
-directional_shadow_max_distance = 28.0
-directional_shadow_pancake_size = 4.0
+shadow_bias = 0.02
+shadow_normal_bias = 1.0
+directional_shadow_mode = 0
+directional_shadow_fade_start = 1.0
+directional_shadow_max_distance = 14.0
+directional_shadow_pancake_size = 2.0
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=1779279210]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5717056, 1.5, 2.8223019)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5717056, 1.6122932, 1.9140944)
 current = true
 fov = 35.0
 script = ExtResource("2_cam")
@@ -100,4 +98,4 @@ mesh = SubResource("PlaneMesh_ground")
 
 [node name="RaidenShogun" parent="." unique_id=1110029233 instance=ExtResource("1_o5qli")]
 transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0.6036525, 0, 0.21492863)
-outline_width = 3.0
+outline_width = 2.0

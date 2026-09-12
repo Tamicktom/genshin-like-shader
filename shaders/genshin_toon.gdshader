@@ -9,13 +9,16 @@ uniform bool use_albedo_texture = true;
 uniform float texture_lod_bias : hint_range(-4.0, 4.0) = -0.75;
 uniform float alpha_scissor_threshold : hint_range(0.0, 1.0) = 0.5;
 uniform bool use_alpha_scissor = false;
+// Hair/dress cards need both faces. Body, hands, feet, and the sword do not —
+// drawing backfaces on thin meshes reads as see-through.
+uniform bool double_sided = false;
 
 group_uniforms CelShading;
 uniform vec4 shadow_color : source_color = vec4(0.62, 0.55, 0.78, 1.0);
 uniform float shadow_threshold : hint_range(0.0, 1.0) = 0.5;
 uniform float shadow_smoothness : hint_range(0.001, 0.35) = 0.04;
 // How cast shadows (shadow map) blend into the same cel tint instead of going black.
-uniform float cast_shadow_softness : hint_range(0.001, 0.5) = 0.12;
+uniform float cast_shadow_softness : hint_range(0.001, 0.8) = 0.22;
 uniform float light_intensity : hint_range(0.0, 2.0) = 0.75;
 uniform float ambient_strength : hint_range(0.0, 1.0) = 0.22;
 uniform vec4 ambient_color : source_color = vec4(0.78, 0.8, 0.9, 1.0);
@@ -47,6 +50,10 @@ void fragment() {
 	v_tangent = TANGENT;
 	v_binormal = BINORMAL;
 
+	if (!double_sided && !FRONT_FACING) {
+		discard;
+	}
+
 	vec4 tex = use_albedo_texture ? texture(albedo_texture, UV, texture_lod_bias) : vec4(1.0);
 	vec4 base = albedo_color * tex;
 
@@ -75,8 +82,11 @@ void light() {
 	// Genshin-style cast shadows: remap shadow-map attenuation into the same
 	// cel band. Multiplying DIFFUSE by ATTENUATION would crush shadowed areas
 	// to black/ambient instead of the cool shadow tint.
+	// Widen the remap with fwidth so the silhouette tracks screen pixels
+	// instead of crawling across shadow-map texels as the caster rotates.
 	float cast_soft = max(cast_shadow_softness, 0.001);
-	float cast_shade = smoothstep(0.0, cast_soft, ATTENUATION);
+	float cast_aa = max(cast_soft, fwidth(ATTENUATION) * 1.5);
+	float cast_shade = smoothstep(0.0, cast_aa, ATTENUATION);
 	float shade = min(ndl_shade, cast_shade);
 
 	vec3 lit_term = mix(shadow_color.rgb, vec3(1.0), shade);

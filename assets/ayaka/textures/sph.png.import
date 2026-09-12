@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c0eftb3lgtlda"
-path="res://.godot/imported/screenshot.png-024a21af5d37bf0f0dd0e2bccdd149d0.ctex"
+uid="uid://b2t25aq4osx0u"
+path="res://.godot/imported/sph.png-ab30a4becbe9a6ba1526b99562c6476a.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://screenshot.png"
-dest_files=["res://.godot/imported/screenshot.png-024a21af5d37bf0f0dd0e2bccdd149d0.ctex"]
+source_file="res://assets/ayaka/textures/sph.png"
+dest_files=["res://.godot/imported/sph.png-ab30a4becbe9a6ba1526b99562c6476a.ctex"]
 
 [params]
 

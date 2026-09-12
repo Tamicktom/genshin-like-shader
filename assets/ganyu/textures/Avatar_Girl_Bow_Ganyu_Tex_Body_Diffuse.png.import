@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c0eftb3lgtlda"
-path="res://.godot/imported/screenshot.png-024a21af5d37bf0f0dd0e2bccdd149d0.ctex"
+uid="uid://7guorwi042d3"
+path="res://.godot/imported/Avatar_Girl_Bow_Ganyu_Tex_Body_Diffuse.png-8372588f41a6cc6debfbc53fc9cb03cc.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://screenshot.png"
-dest_files=["res://.godot/imported/screenshot.png-024a21af5d37bf0f0dd0e2bccdd149d0.ctex"]
+source_file="res://assets/ganyu/textures/Avatar_Girl_Bow_Ganyu_Tex_Body_Diffuse.png"
+dest_files=["res://.godot/imported/Avatar_Girl_Bow_Ganyu_Tex_Body_Diffuse.png-8372588f41a6cc6debfbc53fc9cb03cc.ctex"]
 
 [params]
 

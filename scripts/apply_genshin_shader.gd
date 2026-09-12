@@ -16,7 +16,7 @@ func _ready() -> void:
 	if apply_on_ready:
 		apply_to_tree(self)
 
-func _physics_process(delta: float) -> void:
+func _process(delta: float) -> void:
 	rotate_y(delta * 0.2)
 
 func apply_to_tree(root: Node) -> void:
@@ -42,6 +42,8 @@ func _apply_to_mesh_instance(mesh_instance: MeshInstance3D) -> void:
 
 	# Prefer the full-resolution mesh as long as possible for cel shading.
 	mesh_instance.lod_bias = mesh_lod_bias
+	# Inflated hull must stay inside the AABB used for frustum culling.
+	mesh_instance.extra_cull_margin = maxf(mesh_instance.extra_cull_margin, 0.25)
 
 	var surface_count := mesh_instance.mesh.get_surface_count()
 	for surface_index in surface_count:
@@ -70,7 +72,13 @@ func _create_toon_material(source_material: Material, mesh_name: String) -> Shad
 	material.set_shader_parameter("use_alpha_scissor", false)
 	material.set_shader_parameter("alpha_scissor_threshold", 0.5)
 
-	_configure_presets(material, mesh_name, albedo_texture)
+	var kind := _classify_mesh(mesh_name, albedo_texture)
+	_configure_presets(material, kind)
+
+	if kind.get("face", false) or kind.get("katana", false):
+		# Face: inverted hull becomes a dark oval. Katana: thin double-sided
+		# blade — a hull reads as a hollow/see-through shell.
+		return material
 
 	var outline_material := ShaderMaterial.new()
 	outline_material.shader = outline_shader
@@ -78,35 +86,71 @@ func _create_toon_material(source_material: Material, mesh_name: String) -> Shad
 	outline_material.set_shader_parameter("use_albedo_texture", albedo_texture != null)
 	outline_material.set_shader_parameter("albedo_color", albedo_color)
 	outline_material.set_shader_parameter("texture_lod_bias", texture_lod_bias)
-	outline_material.set_shader_parameter("outline_width", outline_width)
 	outline_material.set_shader_parameter("outline_tint", outline_color)
 	outline_material.set_shader_parameter("outline_darken", 0.28)
 	outline_material.set_shader_parameter("outline_saturation", 1.15)
+	# Bias must stay thinner than a finger (~1cm) or the hull pokes through
+	# the tip and reads as a black nail.
+	var outline_depth_bias := 0.0
+	if kind.get("body", false):
+		outline_depth_bias = 0.003
+	outline_material.set_shader_parameter("outline_width", outline_width)
+	outline_material.set_shader_parameter("outline_depth_bias", outline_depth_bias)
 	material.next_pass = outline_material
 
 	return material
 
 
-func _configure_presets(material: ShaderMaterial, mesh_name: String, albedo_texture: Texture2D) -> void:
+func _classify_mesh(mesh_name: String, albedo_texture: Texture2D) -> Dictionary:
 	var texture_path := ""
 	if albedo_texture != null:
 		texture_path = albedo_texture.resource_path.to_lower()
 
 	var name_lower := mesh_name.to_lower()
-	var is_face := texture_path.ends_with("2_0.png") or name_lower.contains("face") or name_lower.contains("eye")
-	var is_hair := texture_path.ends_with("2_1.png") or name_lower.contains("hair")
-	var is_metal := texture_path.ends_with("2_5.png") or name_lower.contains("katana") or name_lower.contains("acc")
+	return {
+		"face": (
+			_texture_is(texture_path, 0)
+			or name_lower.contains("face")
+			or name_lower.contains("eye")
+			or name_lower.contains("teeth")
+		),
+		"hair": _texture_is(texture_path, 1) or name_lower.contains("hair"),
+		"metal": _texture_is(texture_path, 5) or name_lower.contains("katana") or name_lower.contains("acc"),
+		"katana": _texture_is(texture_path, 5) or name_lower.contains("katana"),
+		"dress": name_lower.contains("dress"),
+		"body": name_lower.contains("body"),
+	}
+
+
+func _texture_is(texture_path: String, atlas_index: int) -> bool:
+	if texture_path.is_empty():
+		return false
+	return (
+		texture_path.ends_with("2_%d.png" % atlas_index)
+		or texture_path.contains("gltf_embedded_%d" % atlas_index)
+	)
+
+
+func _configure_presets(material: ShaderMaterial, kind: Dictionary) -> void:
+	var is_face: bool = kind.get("face", false)
+	var is_hair: bool = kind.get("hair", false)
+	var is_metal: bool = kind.get("metal", false)
+	var is_dress: bool = kind.get("dress", false)
+	var is_katana: bool = kind.get("katana", false)
 
 	material.set_shader_parameter("use_alpha_scissor", false)
+	# Face/hair/dress/katana are thin shells in this GLB; discarding backfaces
+	# punches holes or makes the blade read as hollow.
+	material.set_shader_parameter("double_sided", is_face or is_hair or is_dress or is_katana)
 	material.set_shader_parameter("ambient_strength", 0.2)
 	material.set_shader_parameter("light_intensity", 0.7)
-	material.set_shader_parameter("cast_shadow_softness", 0.14)
+	material.set_shader_parameter("cast_shadow_softness", 0.22)
 
 	if is_face:
 		# Softer, warmer terminator — faces in Genshin avoid harsh cast bands.
 		material.set_shader_parameter("shadow_threshold", 0.52)
 		material.set_shader_parameter("shadow_smoothness", 0.055)
-		material.set_shader_parameter("cast_shadow_softness", 0.22)
+		material.set_shader_parameter("cast_shadow_softness", 0.32)
 		material.set_shader_parameter("shadow_color", Color(0.86, 0.74, 0.76, 1.0))
 		material.set_shader_parameter("specular_strength", 0.04)
 		material.set_shader_parameter("rim_strength", 0.08)
@@ -116,7 +160,7 @@ func _configure_presets(material: ShaderMaterial, mesh_name: String, albedo_text
 		# Albedo already carries painted highlights — realtime gloss stays subtle.
 		material.set_shader_parameter("shadow_threshold", 0.47)
 		material.set_shader_parameter("shadow_smoothness", 0.025)
-		material.set_shader_parameter("cast_shadow_softness", 0.1)
+		material.set_shader_parameter("cast_shadow_softness", 0.2)
 		material.set_shader_parameter("shadow_color", Color(0.52, 0.42, 0.72, 1.0))
 		material.set_shader_parameter("use_anisotropic_specular", true)
 		material.set_shader_parameter("hair_flow_blend", 1.0)
@@ -134,17 +178,17 @@ func _configure_presets(material: ShaderMaterial, mesh_name: String, albedo_text
 	elif is_metal:
 		material.set_shader_parameter("shadow_threshold", 0.45)
 		material.set_shader_parameter("shadow_smoothness", 0.03)
-		material.set_shader_parameter("cast_shadow_softness", 0.1)
+		material.set_shader_parameter("cast_shadow_softness", 0.2)
 		material.set_shader_parameter("shadow_color", Color(0.58, 0.52, 0.74, 1.0))
-		material.set_shader_parameter("specular_strength", 0.45)
+		material.set_shader_parameter("specular_strength", 0.22)
 		material.set_shader_parameter("specular_size", 96.0)
-		material.set_shader_parameter("rim_strength", 0.15)
+		material.set_shader_parameter("rim_strength", 0.08)
 	else:
 		# Cloth/body: clean two-tone band. Fabric albedo already has paint detail —
 		# keep realtime gloss/rim soft so cloth doesn't read as plastic.
 		material.set_shader_parameter("shadow_threshold", 0.5)
 		material.set_shader_parameter("shadow_smoothness", 0.032)
-		material.set_shader_parameter("cast_shadow_softness", 0.12)
+		material.set_shader_parameter("cast_shadow_softness", 0.24)
 		material.set_shader_parameter("shadow_color", Color(0.66, 0.56, 0.8, 1.0))
 		material.set_shader_parameter("specular_strength", 0.035)
 		material.set_shader_parameter("specular_size", 32.0)
