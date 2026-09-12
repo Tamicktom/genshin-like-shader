@@ -1,26 +1,26 @@
 [gd_resource type="Resource" script_class="ToonPreset" load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://scripts/resources/toon_preset.gd" id="1_script"]
+[ext_resource type="Script" path="res://scripts/resources/ToonPreset.cs" id="1_script"]
 
 [resource]
 script = ExtResource("1_script")
-shadow_color = Color(0.58, 0.52, 0.74, 1)
-shadow_threshold = 0.45
-shadow_smoothness = 0.03
-cast_shadow_softness = 0.2
-light_intensity = 0.7
-ambient_strength = 0.2
-ambient_color = Color(0.78, 0.8, 0.9, 1)
-specular_color = Color(1, 0.96, 0.92, 1)
-specular_size = 96.0
-specular_smoothness = 0.08
-specular_strength = 0.22
-use_anisotropic_specular = false
-hair_flow_blend = 1.0
-hair_spec_shift = 0.08
-hair_spec_secondary = 0.4
-hair_spec_secondary_shift = -0.12
-hair_spec_secondary_size = 24.0
-rim_color = Color(0.7, 0.78, 1, 1)
-rim_power = 4.0
-rim_strength = 0.08
+ShadowColor = Color(0.58, 0.52, 0.74, 1)
+ShadowThreshold = 0.45
+ShadowSmoothness = 0.03
+CastShadowSoftness = 0.2
+LightIntensity = 0.7
+AmbientStrength = 0.2
+AmbientColor = Color(0.78, 0.8, 0.9, 1)
+SpecularColor = Color(1, 0.96, 0.92, 1)
+SpecularSize = 96.0
+SpecularSmoothness = 0.08
+SpecularStrength = 0.22
+UseAnisotropicSpecular = false
+HairFlowBlend = 1.0
+HairSpecShift = 0.08
+HairSpecSecondary = 0.4
+HairSpecSecondaryShift = -0.12
+HairSpecSecondarySize = 24.0
+RimColor = Color(0.7, 0.78, 1, 1)
+RimPower = 4.0
+RimStrength = 0.08

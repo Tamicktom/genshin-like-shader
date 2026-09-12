@@ -1,13 +1,13 @@
 [gd_scene format=3 uid="uid://c5a2lyggsnxev"]
 
 [ext_resource type="PackedScene" uid="uid://clhaokmg1yisk" path="res://assets/raiden-shogun/source/raiden_shogun 2.glb" id="1_2sjq7"]
-[ext_resource type="Script" uid="uid://bhxqdh17iitrn" path="res://scripts/apply_character_look.gd" id="2_apply"]
+[ext_resource type="Script" path="res://scripts/ApplyCharacterLook.cs" id="2_apply"]
 [ext_resource type="Resource" uid="uid://c2tjtsutmyrlb" path="res://looks/raiden_shogun.tres" id="3_look"]
-[ext_resource type="Script" uid="uid://bd8riprj7wvhq" path="res://scripts/spin_y.gd" id="4_spin"]
+[ext_resource type="Script" path="res://scripts/SpinY.cs" id="4_spin"]
 
 [node name="RaidenShogun" type="Node3D" unique_id=1110029233]
 script = ExtResource("2_apply")
-look = ExtResource("3_look")
+Look = ExtResource("3_look")
 
 [node name="SpinY" type="Node" parent="." unique_id=1225596374]
 script = ExtResource("4_spin")

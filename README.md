@@ -1,8 +1,8 @@
 # Genshin-like Shader
 
-Godot 4.7 project that explores a **Genshin Impact–inspired** character look: cel shading, rim light, and textured outlines.
+Godot 4.7 **.NET** project that explores a **Genshin Impact–inspired** character look: cel shading, rim light, and textured outlines.
 
-The shader stack is **opt-in** and **data-driven**. Character shading lives in `CharacterLook` / `ToonPreset` resources. Nodes that use `apply_character_look.gd` bind albedo from the imported mesh and apply the first matching slot. Models without that script keep their original materials.
+The shader stack is **opt-in** and **data-driven**. Character shading lives in `CharacterLook` / `ToonPreset` resources. Nodes that use `ApplyCharacterLook.cs` bind albedo from the imported mesh and apply the first matching slot. Models without that script keep their original materials.
 
 ## Current state
 
@@ -17,9 +17,9 @@ The shader stack is **opt-in** and **data-driven**. Character shading lives in `
 | Anti-aliasing | MSAA 4x + FXAA |
 | Window | 1280×720, stretch `expand`, camera reframes on resize |
 
-Engine: **Godot 4.7** (Forward Plus). Main scene is set in `project.godot`.
+Engine: **Godot 4.7 .NET** (Forward Plus). Main scene is set in `project.godot`.
 
-The demo character slow-spins via `spin_y.gd` so lighting and outlines can be judged from every angle.
+The demo character slow-spins via `SpinY.cs` so lighting and outlines can be judged from every angle.
 
 ## Project layout
 
@@ -31,13 +31,14 @@ scenes/
   main.tscn               Playable demo scene
   raiden-shogun.tscn      Character + look applicator + spin
 scripts/
-  apply_character_look.gd Opt-in look applicator
-  spin_y.gd               Demo turntable (rotates parent)
-  frame_character_camera.gd  Auto-frames target on load/resize
+  ApplyCharacterLook.cs   Opt-in look applicator
+  SpinY.cs                Demo turntable (rotates parent)
+  FrameCharacterCamera.cs Auto-frames target on load/resize
+  ShaderParams.cs         snake_case shader uniform names
   resources/
-    toon_preset.gd        Shading knobs only
-    look_slot.gd          Match patterns + outline flags
-    character_look.gd     Ordered slots + shaders
+    ToonPreset.cs         Shading knobs only
+    LookSlot.cs           Match patterns + outline flags
+    CharacterLook.cs      Ordered slots + shaders
 shaders/
   genshin_toon.gdshader   Cel shading / rim / specular
   genshin_outline.gdshader Inverted-hull outline
@@ -45,7 +46,7 @@ shaders/
 
 ## How to run
 
-1. Open the folder in Godot 4.7+.
+1. Open the folder in **Godot 4.7 .NET** (Mono build) with the .NET SDK installed.
 2. Press **F5** (runs `scenes/main.tscn`).
 
 ## Applying the look to another model (opt-in)
@@ -55,11 +56,11 @@ The shader does **not** auto-apply to every mesh in the scene.
 1. Duplicate or create a `CharacterLook` resource (see `looks/raiden_shogun.tres`).
 2. Fill ordered `LookSlot`s: name/texture wildcards, which `ToonPreset`, outline / double-sided flags.
 3. Instance your model (GLB/glTF, etc.).
-4. On the model root, attach `scripts/apply_character_look.gd` and assign the look.
-5. Optionally tune `outline_width_scale` on the applicator (demo uses `2.0`).
-6. Run the scene. On `_ready()`, the script walks all child `MeshInstance3D` nodes and replaces surface materials.
+4. On the model root, attach `scripts/ApplyCharacterLook.cs` and assign the look.
+5. Optionally tune `OutlineWidthScale` on the applicator (demo uses `2.0`).
+6. Run the scene. On `_Ready()`, the script walks all child `MeshInstance3D` nodes and replaces surface materials.
 
-To **exclude** a model, simply do not attach the script (or set `apply_on_ready = false`).
+To **exclude** a model, simply do not attach the script (or set `ApplyOnReady = false`).
 
 Requirements for a good result:
 
@@ -70,12 +71,12 @@ Requirements for a good result:
 
 Edit the character’s `.tres` (or the Inspector):
 
-1. Append a `LookSlot` to `slots` (order matters — first match wins).
-2. Set `name_patterns` / `texture_patterns` with case-insensitive wildcards (`*hair*`, `*gltf_embedded_1*`).
-3. Point `preset` at a shared `materials/presets/*.tres` (or a new one).
-4. Set `enable_outline`, `double_sided`, and optional `outline_depth_bias`.
+1. Append a `LookSlot` to `Slots` (order matters — first match wins).
+2. Set `NamePatterns` / `TexturePatterns` with case-insensitive wildcards (`*hair*`, `*gltf_embedded_1*`).
+3. Point `Preset` at a shared `materials/presets/*.tres` (or a new one).
+4. Set `EnableOutline`, `DoubleSided`, and optional `OutlineDepthBias`.
 
-Anything that matches no slot uses `fallback_preset` / fallback outline flags.
+Anything that matches no slot uses `FallbackPreset` / fallback outline flags.
 
 ## How the shaders work
 
@@ -110,16 +111,16 @@ Inverted-hull outline:
 - A small `outline_depth_bias` can pull the hull toward the camera (body uses a few millimeters; must stay thinner than a finger).
 - Fragment samples the **same albedo UV** as the mesh, then darkens / slightly boosts saturation so the line follows local color (purple cloth → purple line).
 
-Wired as `material.next_pass` when the resolved slot has `enable_outline = true`.
+Wired as `material.NextPass` when the resolved slot has `EnableOutline = true`.
 
-### 3. Look resources + `apply_character_look.gd`
+### 3. Look resources + `ApplyCharacterLook.cs`
 
 For each surface:
 
 1. Reads the active material’s albedo texture/color.
 2. Resolves the first matching `LookSlot` from the assigned `CharacterLook` (node name or texture path wildcards).
 3. Builds a `ShaderMaterial` with the look’s toon shader, stamps albedo, applies the slot’s `ToonPreset`.
-4. Optionally builds an outline `ShaderMaterial` and sets it as `next_pass`.
+4. Optionally builds an outline `ShaderMaterial` and sets it as `NextPass`.
 5. Assigns the stack as a surface override (original mesh materials stay untouched on disk).
 
 **Raiden slots** (`looks/raiden_shogun.tres`):
@@ -131,7 +132,7 @@ For each surface:
 | Weapon | `*katana*`, `*2_5.png`, `*gltf_embedded_5*` | Metal shading, double-sided, **no outline** |
 | Metal | `*acc*` | Tighter specular, outline on |
 | Dress | `*dress*` | Cloth preset, double-sided |
-| Body | `*body*` | Cloth preset, `outline_depth_bias = 0.003` |
+| Body | `*body*` | Cloth preset, `OutlineDepthBias = 0.003` |
 | Fallback | everything else | Cloth preset, outline on |
 
 Face and weapon skip the inverted hull on purpose. A hull on the head shell becomes a dark oval over the forehead; a hull on the thin blade reads as a hollow sword.
@@ -142,22 +143,22 @@ Shared presets live under `materials/presets/` (`face`, `hair`, `cloth`, `metal`
 
 **On the apply script (inspector)**
 
-- `look` — `CharacterLook` resource
-- `outline_width_scale` — multiplies each slot’s outline width (demo uses `2.0`)
-- `apply_on_ready` — auto-apply when the node enters the tree
+- `Look` — `CharacterLook` resource
+- `OutlineWidthScale` — multiplies each slot’s outline width (demo uses `2.0`)
+- `ApplyOnReady` — auto-apply when the node enters the tree
 
 **On the CharacterLook / LookSlot**
 
-- Slot wildcards, preset reference, `enable_outline`, `double_sided`, `outline_depth_bias`
-- Global `outline_tint` / `outline_darken` / `outline_saturation`
-- `mesh_lod_bias` / `texture_lod_bias`
+- Slot wildcards, preset reference, `EnableOutline`, `DoubleSided`, `OutlineDepthBias`
+- Global `OutlineTint` / `OutlineDarken` / `OutlineSaturation`
+- `MeshLodBias` / `TextureLodBias`
 
 **On ToonPreset / toon shader**
 
-- `shadow_threshold` / `shadow_smoothness` / `shadow_color`
-- `cast_shadow_softness` — how the shadow map blends into the cel band
-- `light_intensity` / `ambient_strength`
-- `rim_strength` / `specular_strength`
+- `ShadowThreshold` / `ShadowSmoothness` / `ShadowColor` (shader uniforms stay snake_case)
+- `CastShadowSoftness` — how the shadow map blends into the cel band
+- `LightIntensity` / `AmbientStrength`
+- `RimStrength` / `SpecularStrength`
 
 **On the outline shader**
 
@@ -180,7 +181,7 @@ Configured in `project.godot`:
 - Screen-space AA = FXAA
 - Directional shadow size `8192`, soft filter quality Ultra
 
-The demo camera listens to viewport `size_changed` and reframes the character.
+The demo camera listens to viewport `SizeChanged` and reframes the character.
 
 ## Notes / limits
 

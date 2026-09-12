@@ -1,0 +1,114 @@
+//* Libraries imports
+using Godot;
+using Godot.Collections;
+
+//* Local imports
+//* ...
+
+/// <summary>
+/// Resolved look settings for one mesh surface (first matching slot or fallback).
+/// </summary>
+public readonly struct ResolvedLookSlot
+{
+	public ToonPreset Preset { get; init; }
+	public bool DoubleSided { get; init; }
+	public bool EnableOutline { get; init; }
+	public float OutlineWidth { get; init; }
+	public float OutlineDepthBias { get; init; }
+	public string SlotName { get; init; }
+}
+
+/// <summary>
+/// Ordered slot table + shaders for one character. First matching slot wins.
+/// </summary>
+[GlobalClass]
+public partial class CharacterLook : Resource
+{
+	[Export]
+	public string DisplayName { get; set; } = "";
+
+	[Export]
+	public Shader ToonShader { get; set; }
+
+	[Export]
+	public Shader OutlineShader { get; set; }
+
+	[ExportGroup("Slots")]
+	/// <summary>
+	/// Evaluated in order; first match wins.
+	/// </summary>
+	[Export]
+	public Array<LookSlot> Slots { get; set; } = new Array<LookSlot>();
+
+	[Export]
+	public ToonPreset FallbackPreset { get; set; }
+
+	[Export]
+	public bool FallbackDoubleSided { get; set; }
+
+	[Export]
+	public bool FallbackEnableOutline { get; set; } = true;
+
+	[Export(PropertyHint.Range, "0.0,12.0")]
+	public float FallbackOutlineWidth { get; set; } = 1.25f;
+
+	[Export(PropertyHint.Range, "0.0,0.4")]
+	public float FallbackOutlineDepthBias { get; set; }
+
+	[ExportGroup("Mesh / Texture")]
+	/// <summary>
+	/// Keeps high mesh/detail longer when the camera pulls away (toon needs full normals).
+	/// </summary>
+	[Export]
+	public float MeshLodBias { get; set; } = 16.0f;
+
+	/// <summary>
+	/// Negative = sharper albedo farther from camera (delays blurry mips).
+	/// </summary>
+	[Export]
+	public float TextureLodBias { get; set; } = -0.75f;
+
+	[ExportGroup("Outline Defaults")]
+	[Export]
+	public Color OutlineTint { get; set; } = new Color(1.0f, 1.0f, 1.0f, 1.0f);
+
+	[Export(PropertyHint.Range, "0.0,1.0")]
+	public float OutlineDarken { get; set; } = 0.28f;
+
+	[Export(PropertyHint.Range, "0.0,2.0")]
+	public float OutlineSaturation { get; set; } = 1.15f;
+
+	public ResolvedLookSlot ResolveSlot(string meshName, string texturePath)
+	{
+		foreach (LookSlot slot in Slots)
+		{
+			if (slot == null)
+			{
+				continue;
+			}
+
+			if (slot.Matches(meshName, texturePath))
+			{
+				return new ResolvedLookSlot
+				{
+					Preset = slot.Preset,
+					DoubleSided = slot.DoubleSided,
+					EnableOutline = slot.EnableOutline,
+					OutlineWidth = slot.OutlineWidth,
+					OutlineDepthBias = slot.OutlineDepthBias,
+					SlotName = slot.SlotName,
+				};
+			}
+		}
+
+		return new ResolvedLookSlot
+		{
+			Preset = FallbackPreset,
+			DoubleSided = FallbackDoubleSided,
+			EnableOutline = FallbackEnableOutline,
+			OutlineWidth = FallbackOutlineWidth,
+			OutlineDepthBias = FallbackOutlineDepthBias,
+			SlotName = "fallback",
+		};
+	}
+}

@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://pcbrrpm18unh"]
 
 [ext_resource type="PackedScene" uid="uid://c5a2lyggsnxev" path="res://scenes/raiden-shogun.tscn" id="1_o5qli"]
-[ext_resource type="Script" uid="uid://besoovd5n40ac" path="res://scripts/frame_character_camera.gd" id="2_cam"]
+[ext_resource type="Script" path="res://scripts/FrameCharacterCamera.cs" id="2_cam"]
 [ext_resource type="Shader" uid="uid://cpo7r0lrj0q6q" path="res://shaders/genshin_toon.gdshader" id="3_toon"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
@@ -87,15 +87,15 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5717056, 1.6122932, 1.91409
 current = true
 fov = 35.0
 script = ExtResource("2_cam")
-target_path = NodePath("../RaidenShogun")
-padding = 1.25
-height_bias = 0.12
-yaw_degrees = 24.0
-pitch_degrees = -6.0
+TargetPath = NodePath("../RaidenShogun")
+Padding = 1.25
+HeightBias = 0.12
+YawDegrees = 24.0
+PitchDegrees = -6.0
 
 [node name="Ground" type="MeshInstance3D" parent="." unique_id=367872357]
 mesh = SubResource("PlaneMesh_ground")
 
 [node name="RaidenShogun" parent="." unique_id=1110029233 instance=ExtResource("1_o5qli")]
 transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0.6036525, 0, 0.21492863)
-outline_width_scale = 2.0
+OutlineWidthScale = 2.0
