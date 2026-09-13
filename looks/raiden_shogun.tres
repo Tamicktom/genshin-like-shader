@@ -10,6 +10,7 @@
 [ext_resource type="Resource" path="res://materials/presets/metal.tres" id="8_metal"]
 [ext_resource type="Resource" path="res://materials/presets/cloth.tres" id="9_cloth"]
 [ext_resource type="Texture2D" uid="uid://l40van6m6d4" path="res://looks/raiden_face_shadow.png" id="10_faceshadow"]
+[ext_resource type="Texture2D" uid="uid://bhairhlmask01" path="res://looks/raiden_hair_highlight.png" id="11_hairhl"]
 
 [sub_resource type="Resource" id="slot_face"]
 script = ExtResource("2_slot")
@@ -19,6 +20,8 @@ TexturePatterns = PackedStringArray("*2_0.png", "*gltf_embedded_0*")
 Preset = ExtResource("5_face")
 DoubleSided = true
 EnableOutline = false
+FlattenOutlineDepth = true
+OutlineDepthFlatten = 0.85
 FaceShadowTex = ExtResource("10_faceshadow")
 
 [sub_resource type="Resource" id="slot_weapon"]
@@ -43,6 +46,7 @@ NamePatterns = PackedStringArray("*hair*")
 TexturePatterns = PackedStringArray("*2_1.png", "*gltf_embedded_1*")
 Preset = ExtResource("6_hair")
 DoubleSided = true
+HairHighlightTex = ExtResource("11_hairhl")
 
 [sub_resource type="Resource" id="slot_dress"]
 script = ExtResource("2_slot")

@@ -15,9 +15,12 @@ public readonly struct ResolvedLookSlot
 	public bool EnableOutline { get; init; }
 	public float OutlineWidth { get; init; }
 	public float OutlineDepthBias { get; init; }
+	public bool FlattenOutlineDepth { get; init; }
+	public float OutlineDepthFlatten { get; init; }
 	public string SlotName { get; init; }
 	public Texture2D FaceShadowTex { get; init; }
 	public Texture2D ControlTex { get; init; }
+	public Texture2D HairHighlightTex { get; init; }
 	public Texture2D DetailNormalTex { get; init; }
 }
 
@@ -99,9 +102,12 @@ public partial class CharacterLook : Resource
 					EnableOutline = slot.EnableOutline,
 					OutlineWidth = slot.OutlineWidth,
 					OutlineDepthBias = slot.OutlineDepthBias,
+					FlattenOutlineDepth = slot.FlattenOutlineDepth,
+					OutlineDepthFlatten = slot.OutlineDepthFlatten,
 					SlotName = slot.SlotName,
 					FaceShadowTex = slot.FaceShadowTex,
 					ControlTex = slot.ControlTex,
+					HairHighlightTex = slot.HairHighlightTex,
 					DetailNormalTex = slot.DetailNormalTex,
 				};
 			}
@@ -114,9 +120,12 @@ public partial class CharacterLook : Resource
 			EnableOutline = FallbackEnableOutline,
 			OutlineWidth = FallbackOutlineWidth,
 			OutlineDepthBias = FallbackOutlineDepthBias,
+			FlattenOutlineDepth = false,
+			OutlineDepthFlatten = 0.0f,
 			SlotName = "fallback",
 			FaceShadowTex = null,
 			ControlTex = null,
+			HairHighlightTex = null,
 			DetailNormalTex = null,
 		};
 	}

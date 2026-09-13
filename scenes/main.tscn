@@ -4,6 +4,7 @@
 [ext_resource type="Script" uid="uid://d4fx38u764dcl" path="res://scripts/FrameCharacterCamera.cs" id="2_cam"]
 [ext_resource type="Shader" uid="uid://cpo7r0lrj0q6q" path="res://shaders/genshin_toon.gdshader" id="3_toon"]
 [ext_resource type="Script" uid="uid://bv03q3jg6kwbv" path="res://scripts/CaptureSceneScreenshot.cs" id="4_shot"]
+[ext_resource type="CompositorEffect" uid="uid://dg122mqh1si0n" path="res://materials/compositor/toon_outline_effect.tres" id="5_outline"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_top_color = Color(0.45, 0.58, 0.92, 1)
@@ -29,6 +30,9 @@ fog_density = 0.0012
 fog_aerial_perspective = 0.25
 adjustment_enabled = true
 adjustment_saturation = 1.1
+
+[sub_resource type="Compositor" id="Compositor_main"]
+compositor_effects = Array[CompositorEffect]([ExtResource("5_outline")])
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ground"]
 render_priority = 0
@@ -71,7 +75,12 @@ shader_parameter/rim_strength = 0.0
 shader_parameter/use_face_shadow = false
 shader_parameter/head_forward = Vector3(0, 0, 1)
 shader_parameter/head_right = Vector3(1, 0, 0)
+shader_parameter/head_position = Vector3(0, 0, 0)
+shader_parameter/outline_depth_flatten = 0.0
 shader_parameter/use_control_tex = false
+shader_parameter/use_hair_highlight = false
+shader_parameter/hair_highlight_blend = 1.0
+shader_parameter/hair_highlight_fresnel = 5.0
 shader_parameter/use_detail_normal = false
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
@@ -83,6 +92,7 @@ script = ExtResource("4_shot")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1905834855]
 environment = SubResource("Environment_main")
+compositor = SubResource("Compositor_main")
 
 [node name="Sun" type="DirectionalLight3D" parent="." unique_id=325026453]
 transform = Transform3D(0.7660444, -0.49240386, 0.4131766, 0, 0.6427876, 0.7660444, -0.6427876, -0.5868241, 0.49240386, 4, 8, 3)
@@ -112,4 +122,4 @@ mesh = SubResource("PlaneMesh_ground")
 
 [node name="RaidenShogun" parent="." unique_id=1110029233 instance=ExtResource("1_o5qli")]
 transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0.6036525, 0, 0.21492863)
-OutlineWidthScale = 2.0
+OutlineWidthScale = 1.8

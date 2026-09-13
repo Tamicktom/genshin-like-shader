@@ -65,9 +65,19 @@ uniform sampler2D face_shadow_tex : filter_linear, repeat_disable;
 uniform bool use_face_shadow = false;
 uniform vec3 head_forward = vec3(0.0, 0.0, 1.0);
 uniform vec3 head_right = vec3(1.0, 0.0, 0.0);
+uniform vec3 head_position = vec3(0.0);
+// Bound for look compatibility. Do not assign DEPTH from this shader: a
+// fragment depth write disables MSAA coverage and stipples the whole mesh.
+uniform float outline_depth_flatten : hint_range(0.0, 1.0) = 0.0;
 // Packed control / detail normal — bound but unused until later phases.
 uniform sampler2D control_tex : filter_linear_mipmap, repeat_disable;
 uniform bool use_control_tex = false;
+// Greyscale hair streak mask (data, not sRGB). Off = Kajiya-Kay / Phong.
+uniform sampler2D hair_highlight_tex : filter_linear, repeat_disable;
+uniform bool use_hair_highlight = false;
+// 0 = keep anisotropic/Phong, 1 = replace with mask * shade * (1 - fresnel).
+uniform float hair_highlight_blend : hint_range(0.0, 1.0) = 1.0;
+uniform float hair_highlight_fresnel : hint_range(0.5, 8.0) = 5.0;
 uniform sampler2D detail_normal_tex : hint_normal, filter_linear_mipmap, repeat_disable;
 uniform bool use_detail_normal = false;
 
@@ -101,6 +111,11 @@ void fragment() {
 
 	// Gentle flat fill — keep this low so lit areas are not washed out.
 	EMISSION = ALBEDO * ambient_color.rgb * ambient_strength;
+
+	// Do not write DEPTH in this shader. A conditional DEPTH assignment still
+	// disables early-Z / MSAA coverage and stipples every mesh that shares
+	// genshin_toon (ground, cloth, hair). Face inner-ink is suppressed by the
+	// compositor's relative depth threshold instead.
 }
 
 void light() {
@@ -197,9 +212,19 @@ void light() {
 			spec = smoothstep(0.5 - specular_smoothness, 0.5 + specular_smoothness, spec_raw) * shade;
 		}
 
+		// Painted streak replaces (or mixes with) Kajiya-Kay when a mask is bound.
+		if (use_hair_highlight) {
+			float spec_mask = texture(hair_highlight_tex, v_uv).r;
+			float hl_fresnel = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), hair_highlight_fresnel);
+			float mask_spec = spec_mask * shade * (1.0 - hl_fresnel);
+			spec = mix(spec, mask_spec, hair_highlight_blend);
+		}
+
 		SPECULAR_LIGHT += specular_color.rgb * spec * specular_strength * LIGHT_COLOR;
 	}
 
 	float fresnel = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), rim_power);
-	SPECULAR_LIGHT += rim_color.rgb * fresnel * rim_strength * shade * LIGHT_COLOR;
+	// Additive rim fights hair-mask Fresnel suppress — gate it when the mask drives spec.
+	float rim_gate = 1.0 - (use_hair_highlight ? hair_highlight_blend : 0.0);
+	SPECULAR_LIGHT += rim_color.rgb * fresnel * rim_strength * shade * LIGHT_COLOR * rim_gate;
 }

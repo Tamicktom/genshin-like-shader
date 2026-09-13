@@ -38,4 +38,6 @@ Lookdev sweeps (windowed; Forward+ needs a real GPU):
 $GODOT --path . -- --grade-ab   # tonemap A/B → screenshots/grade_*.png
 $GODOT --path . -- --fog-ab     # fog A/B → screenshots/fog_*.png
 $GODOT --path . -- --face-ab    # face NdotL vs map → screenshots/face_*.png
+$GODOT --path . -- --hair-ab    # hair Kajiya-Kay vs mask → screenshots/hair_*.png
+$GODOT --path . -- --outline-ab # compositor outline A/B → screenshots/outline_*.png
 ```

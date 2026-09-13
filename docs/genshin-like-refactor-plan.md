@@ -160,11 +160,13 @@ Packed metal masks (often a channel on a lightmap) wait until those textures exi
 
 ---
 
-## Phase 6 — Hair highlight mask
+## Phase 6 — Hair highlight mask ✅
 
 **Why:** Genshin hair shine is a painted streak, gated by light, with Fresnel *removing* the sides. Dual-lobe Kajiya-Kay is a decent fallback and should remain when no mask is bound.
 
 **Done when:** hair with a mask shows a single anime streak in light that dies at the silhouette. Hair without a mask still uses Kajiya-Kay.
+
+**Result:** Greyscale streak map extracted from Raiden hair albedo (`tools/generate_raiden_hair_highlight.py` → `looks/raiden_hair_highlight.png`). `HairHighlightTex` on `LookSlot` (Hair slot only); `use_hair_highlight` from bind. Shader mixes `mask * shade * (1 - fresnel)` with Kajiya-Kay via `HairHighlightBlend` (default 1). Dedicated `HairHighlightFresnel` (default 5); additive rim gated off when mask drives spec. Missing map → old path. Sweep: `--hair-ab` → `screenshots/hair_kajiya.png` / `hair_mask.png`.
 
 ### Steps
 
@@ -175,13 +177,13 @@ Packed metal masks (often a channel on a lightmap) wait until those textures exi
 
 ---
 
-## Phase 7 — Post-process outline + edge highlight
+## Phase 7 — Post-process outline + edge highlight ✅
 
 **Why:** the hull cannot ink inner silhouettes and cannot draw the white anime rim. Mendez’s look is depth+normal Sobel (outline) plus a second Sobel kept on the far side of the silhouette (edge highlight), with a face depth hack so eyes/nose do not ink.
 
 **Done when:** a compositor pass draws outer + inner contours; the white rim sits on the silhouette (slightly downward); the face does not grow inner scribbles. The hull can be toggled off per slot once the pass is trusted.
 
-This is the largest architecture change. Isolate it.
+**Result:** `ToonOutlineCompositorEffect` + `shaders/toon_outline.glsl` on `WorldEnvironment` (`materials/compositor/toon_outline_effect.tres`, default on). **Relative reverse-Z depth Sobel** on the MSAA-resolved `R32Sfloat` depth target (`AccessResolvedDepth`). `NeedsNormalRoughness` stays off (it blacks out custom `light()`). Color-luma Sobel was a dead end (inks every cel band). Fragment `DEPTH` flatten was removed: even a unused `if` still breaks MSAA coverage and rendered the demo as black stipple. Cloth/hair `RimStrength = 0`. Hull kept for albedo-tinted lines (plan option a). Sweep: `--outline-ab` → `screenshots/outline_*.png`.
 
 ### Steps
 
@@ -246,6 +248,8 @@ Each line should be its own commit (working demo after each):
 - **Phase 3 grade = Filmic + sat 1.1.** A/B rejected ACES (grey highs), AGX (muted), and denser fog. GT compositor deferred until Filmic fails the bar.
 - **Phase 4 metal = half-vector `GradientTexture1D`.** Shader path + shared ramp exist; Raiden metal preset keeps the flag off (Phong). Weapon stays Phong. Metal slot before Hair so Hair_Accs is metal, not Kajiya-Kay.
 - **Phase 5 face = painted R/G SDF + head XZ axes.** No official lightmap in GLB; `looks/raiden_face_shadow.png` + `HeadAxes` Marker3D (no skeleton). Missing map → NdotL. Phase 0 extra-map seam landed with this phase.
+- **Phase 6 hair = albedo-extracted greyscale streak + Fresnel suppress.** `looks/raiden_hair_highlight.png` from purple-island luma of `gltf_embedded_1`; `HairHighlightTex` on Hair slot. Mix with Kajiya-Kay via `HairHighlightBlend`; additive rim gated when mask is on. Missing map → Kajiya-Kay.
+- **Phase 7 outline = resolved-depth Sobel compositor + hull fallback.** `NeedsNormalRoughness` breaks custom `light()`; do not write fragment `DEPTH` (breaks MSAA). Cloth/hair Fresnel rim zeroed; hull kept for purple-tinted lines.
 
 ---
 

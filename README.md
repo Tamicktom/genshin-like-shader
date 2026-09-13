@@ -12,7 +12,7 @@ The shader stack is **opt-in** and **data-driven**. Character shading lives in `
 | Demo character | Raiden Shogun GLB under `assets/raiden-shogun/` |
 | Look data | `looks/raiden_shogun.tres` + shared presets under `materials/presets/` |
 | Toon shading | Applied via look table on the Raiden scene only |
-| Outline | Inverted hull, colored from local albedo; slots decide on/off |
+| Outline | Inverted hull (albedo-tinted) + compositor reverse-Z depth Sobel (default on) |
 | Shadows | Orthogonal directional map, 8192 atlas, Ultra PCF |
 | Anti-aliasing | MSAA 4x + FXAA |
 | Window | 1280×720, stretch `expand`, camera reframes on resize |
@@ -28,13 +28,16 @@ assets/raiden-shogun/     Character model + textures
 looks/                    Per-character CharacterLook tables
 materials/presets/        Shared ToonPreset resources (face, hair, …)
 materials/textures/       Shared ramps (e.g. gold metallic GradientTexture1D)
+materials/compositor/     ToonOutlineCompositorEffect resource
 scenes/
   main.tscn               Playable demo scene
   raiden-shogun.tscn      Character + look applicator + spin
 scripts/
   ApplyCharacterLook.cs   Opt-in look applicator
+  ToonOutlineCompositorEffect.cs  Post-process outline / edge highlight
   SpinY.cs                Demo turntable (rotates parent)
   FrameCharacterCamera.cs Auto-frames target on load/resize
+  CaptureSceneScreenshot.cs Lookdev screenshots + A/B sweeps
   ShaderParams.cs         snake_case shader uniform names
   resources/
     ToonPreset.cs         Shading knobs only
@@ -43,6 +46,7 @@ scripts/
 shaders/
   genshin_toon.gdshader   Cel shading / rim / specular
   genshin_outline.gdshader Inverted-hull outline
+  toon_outline.glsl       Compositor compute (depth Sobel)
 ```
 
 ## How to run
@@ -97,7 +101,7 @@ Spatial shader, opaque depth write. Rasterizer is `cull_disabled`; solid parts s
 - Half-Lambert term, then a soft step (`shadow_threshold` / `shadow_smoothness`) for a two-tone cel band.
 - Shadow side is tinted with `shadow_color` (cool purple bias by default).
 - Cast shadows from the light’s shadow map are remapped through `cast_shadow_softness` into the same cel tint (not multiplied to black).
-- Hair can switch to a simple Kajiya-Kay anisotropic band instead of an isotropic blob.
+- Hair can use a painted highlight mask (`HairHighlightTex`) gated by shade with Fresnel suppress; Kajiya-Kay remains the fallback when no mask is bound.
 - Light-side rim, gated by the cel shade.
 
 Important: the material stays in the **opaque** pipeline. Assigning `ALPHA` would push meshes into transparency sorting and can make the character look “see-through”.
@@ -128,10 +132,10 @@ For each surface:
 
 | Slot | Typical match | Notes |
 | --- | --- | --- |
-| Face | `*face*`, `*eye*`, `*teeth*`, `*2_0.png`, `*gltf_embedded_0*` | Warm terminator, double-sided, **no outline** |
+| Face | `*face*`, `*eye*`, `*teeth*`, `*2_0.png`, `*gltf_embedded_0*` | Warm terminator, face shadow map, double-sided, **no outline** |
 | Weapon | `*katana*`, `*2_5.png`, `*gltf_embedded_5*` | Blinn-Phong metal, double-sided, **no outline** |
 | Metal | `*acc*` (before Hair so `Hair_Accs` matches) | Tight Phong (half-vector gradient available, flag off), outline on |
-| Hair | `*hair*`, `*2_1.png`, `*gltf_embedded_1*` | Cool shadow, anisotropic spec, double-sided |
+| Hair | `*hair*`, `*2_1.png`, `*gltf_embedded_1*` | Cool shadow, highlight mask (Kajiya-Kay fallback), double-sided |
 | Dress | `*dress*` | Cloth preset, double-sided |
 | Body | `*body*` | Cloth preset, `OutlineDepthBias = 0.003` |
 | Fallback | everything else | Cloth preset, outline on |
@@ -151,6 +155,7 @@ Shared presets live under `materials/presets/` (`face`, `hair`, `cloth`, `metal`
 **On the CharacterLook / LookSlot**
 
 - Slot wildcards, preset reference, `EnableOutline`, `DoubleSided`, `OutlineDepthBias`
+- Optional maps: `FaceShadowTex`, `HairHighlightTex`, `ControlTex`, `DetailNormalTex`
 - Global `OutlineTint` / `OutlineDarken` / `OutlineSaturation`
 - `MeshLodBias` / `TextureLodBias`
 
@@ -160,6 +165,7 @@ Shared presets live under `materials/presets/` (`face`, `hair`, `cloth`, `metal`
 - `CastShadowSoftness` — how the shadow map blends into the cel band
 - `LightIntensity` / `AmbientStrength`
 - `RimStrength` / `SpecularStrength`
+- `HairHighlightBlend` / `HairHighlightFresnel` — mask vs Kajiya-Kay mix and silhouette suppress
 - `UseMetallicGradient` / `MetallicGradientTex` / `MetallicStrength` — 1D half-vector gold ramp (opt-in; off on Raiden metal)
 
 **On the outline shader**
@@ -187,9 +193,9 @@ The demo camera listens to viewport `SizeChanged` and reframes the character.
 
 ## Notes / limits
 
-- Not a 1:1 Genshin recreation (no face SDF light map, no post-process outline, no vertex-color outline width yet).
+- Not a 1:1 Genshin recreation (painted face SDF + hair highlight mask are lookdev extracts, not official lightmaps; compositor outline is depth Sobel without `NeedsNormalRoughness`, which blacks out custom `light()`; no vertex-color outline width).
 - Opt-in by design: you choose which roots get the applicator + which look resource.
 - Matching is still name/path based in the look table — the heuristics moved out of code into data.
 - Very thin lace/alpha hair may need a dedicated cutout pass later; cutout is currently disabled globally to protect depth.
-- Outline is a per-mesh hull. Internal silhouettes (one part in front of another on the same mesh) are not inked.
-- Face and weapon rely on painted albedo lines instead of a hull.
+- Hull outline is per-mesh; the compositor adds screen-space depth edges (silhouette + occlusions). Hair/cloth/metal keep the hull for purple-tinted lines.
+- Face and weapon skip the hull. Do not write `DEPTH` from `genshin_toon.gdshader` — a fragment depth write disables MSAA coverage and stipples the whole character.

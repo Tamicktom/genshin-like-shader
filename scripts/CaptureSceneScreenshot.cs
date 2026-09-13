@@ -10,7 +10,9 @@ using Godot;
 /// After the demo scene finishes loading (required node + settle frames),
 /// captures one viewport PNG for lookdev / agent verification.
 /// User args: <c>--grade-ab</c> cycles tonemap modes; <c>--fog-ab</c> cycles fog densities;
-/// <c>--face-ab</c> toggles face-shadow map vs NdotL.
+/// <c>--face-ab</c> toggles face-shadow map vs NdotL;
+/// <c>--hair-ab</c> toggles hair highlight mask vs Kajiya-Kay;
+/// <c>--outline-ab</c> cycles compositor outline debug / final modes.
 /// </summary>
 public partial class CaptureSceneScreenshot : Node
 {
@@ -46,20 +48,28 @@ public partial class CaptureSceneScreenshot : Node
 		GradeAb,
 		FogAb,
 		FaceAb,
+		HairAb,
+		OutlineAb,
 	}
 
 	private SweepKind _sweep;
 	private Godot.Environment _environment;
 	private List<EnvShot> _shots;
-	private List<FaceShot> _faceShots;
+	private List<FlagShot> _flagShots;
+	private List<OutlineShot> _outlineShots;
 	private int _shotIndex;
 	private float _savedSaturation = 1.1f;
 	private float _savedFogDensity = 0.0012f;
 	private bool _savedFogEnabled = true;
 	private bool _shotApplied;
-	private List<ShaderMaterial> _faceMaterials;
+	private List<ShaderMaterial> _flagMaterials;
+	private string _flagUseParam;
 	private SpinY _spinY;
 	private bool _spinWasProcessing;
+	private ToonOutlineCompositorEffect _outlineEffect;
+	private bool _savedOutlineEnabled;
+	private float _savedHighlightStrength;
+	private ToonOutlineCompositorEffect.OutlineDebugMode _savedDebugMode;
 
 	private readonly struct EnvShot
 	{
@@ -84,16 +94,36 @@ public partial class CaptureSceneScreenshot : Node
 		public float? FogDensity { get; }
 	}
 
-	private readonly struct FaceShot
+	private readonly struct FlagShot
 	{
-		public FaceShot(string fileName, bool useFaceShadow)
+		public FlagShot(string fileName, bool useFlag)
 		{
 			FileName = fileName;
-			UseFaceShadow = useFaceShadow;
+			UseFlag = useFlag;
 		}
 
 		public string FileName { get; }
-		public bool UseFaceShadow { get; }
+		public bool UseFlag { get; }
+	}
+
+	private readonly struct OutlineShot
+	{
+		public OutlineShot(
+			string fileName,
+			bool enabled,
+			ToonOutlineCompositorEffect.OutlineDebugMode debugMode,
+			float highlightStrength)
+		{
+			FileName = fileName;
+			Enabled = enabled;
+			DebugMode = debugMode;
+			HighlightStrength = highlightStrength;
+		}
+
+		public string FileName { get; }
+		public bool Enabled { get; }
+		public ToonOutlineCompositorEffect.OutlineDebugMode DebugMode { get; }
+		public float HighlightStrength { get; }
 	}
 
 	public override void _Ready()
@@ -121,7 +151,23 @@ public partial class CaptureSceneScreenshot : Node
 		else if (HasUserArg("--face-ab"))
 		{
 			_sweep = SweepKind.FaceAb;
-			_faceShots = BuildFaceShots();
+			_flagShots = BuildFaceShots();
+			_flagUseParam = ShaderParams.UseFaceShadow;
+			_shotIndex = 0;
+			_shotApplied = false;
+		}
+		else if (HasUserArg("--hair-ab"))
+		{
+			_sweep = SweepKind.HairAb;
+			_flagShots = BuildHairShots();
+			_flagUseParam = ShaderParams.UseHairHighlight;
+			_shotIndex = 0;
+			_shotApplied = false;
+		}
+		else if (HasUserArg("--outline-ab"))
+		{
+			_sweep = SweepKind.OutlineAb;
+			_outlineShots = BuildOutlineShots();
 			_shotIndex = 0;
 			_shotApplied = false;
 		}
@@ -140,9 +186,15 @@ public partial class CaptureSceneScreenshot : Node
 			return;
 		}
 
-		if (_sweep == SweepKind.FaceAb)
+		if (_sweep == SweepKind.FaceAb || _sweep == SweepKind.HairAb)
 		{
-			ProcessFaceSweep();
+			ProcessFlagSweep();
+			return;
+		}
+
+		if (_sweep == SweepKind.OutlineAb)
+		{
+			ProcessOutlineSweep();
 			return;
 		}
 
@@ -179,9 +231,11 @@ public partial class CaptureSceneScreenshot : Node
 		SetProcess(false);
 	}
 
-	private void ProcessFaceSweep()
+	private void ProcessFlagSweep()
 	{
-		if (_faceShots == null || _shotIndex >= _faceShots.Count)
+		string label = _sweep == SweepKind.HairAb ? "hair-ab" : "face-ab";
+
+		if (_flagShots == null || _shotIndex >= _flagShots.Count)
 		{
 			RestoreSpin();
 			SetProcess(false);
@@ -194,13 +248,16 @@ public partial class CaptureSceneScreenshot : Node
 			return;
 		}
 
-		if (_faceMaterials == null)
+		if (_flagMaterials == null)
 		{
 			Node required = GetNodeOrNull(RequiredNodePath);
-			_faceMaterials = CollectFaceShadowMaterials(required);
-			if (_faceMaterials.Count == 0)
+			_flagMaterials = CollectFlagMaterials(
+				required,
+				_flagUseParam,
+				_sweep == SweepKind.HairAb ? ShaderParams.HairHighlightTex : ShaderParams.FaceShadowTex);
+			if (_flagMaterials.Count == 0)
 			{
-				GD.PushError("capture_scene_screenshot: face-ab found no use_face_shadow materials");
+				GD.PushError($"capture_scene_screenshot: {label} found no materials with {_flagUseParam}");
 				SetProcess(false);
 				GetTree().Quit();
 				return;
@@ -211,7 +268,7 @@ public partial class CaptureSceneScreenshot : Node
 
 		if (!_shotApplied)
 		{
-			ApplyFaceShot(_faceShots[_shotIndex]);
+			ApplyFlagShot(_flagShots[_shotIndex]);
 			_shotApplied = true;
 			_waitingForSettle = true;
 			_settleCount = 0;
@@ -224,16 +281,16 @@ public partial class CaptureSceneScreenshot : Node
 			return;
 		}
 
-		FaceShot done = _faceShots[_shotIndex];
+		FlagShot done = _flagShots[_shotIndex];
 		CaptureOnce(done.FileName);
-		GD.Print($"capture_scene_screenshot: face-ab {_shotIndex + 1}/{_faceShots.Count} -> {done.FileName}");
+		GD.Print($"capture_scene_screenshot: {label} {_shotIndex + 1}/{_flagShots.Count} -> {done.FileName}");
 
 		_shotIndex++;
 		_shotApplied = false;
 		_waitingForSettle = false;
 		_settleCount = 0;
 
-		if (_shotIndex >= _faceShots.Count)
+		if (_shotIndex >= _flagShots.Count)
 		{
 			RestoreSpin();
 			SetProcess(false);
@@ -259,20 +316,20 @@ public partial class CaptureSceneScreenshot : Node
 		}
 	}
 
-	private void ApplyFaceShot(FaceShot shot)
+	private void ApplyFlagShot(FlagShot shot)
 	{
-		foreach (ShaderMaterial material in _faceMaterials)
+		foreach (ShaderMaterial material in _flagMaterials)
 		{
 			if (material == null || !GodotObject.IsInstanceValid(material))
 			{
 				continue;
 			}
 
-			material.SetShaderParameter(ShaderParams.UseFaceShadow, shot.UseFaceShadow);
+			material.SetShaderParameter(_flagUseParam, shot.UseFlag);
 		}
 	}
 
-	private static List<ShaderMaterial> CollectFaceShadowMaterials(Node root)
+	private static List<ShaderMaterial> CollectFlagMaterials(Node root, string useParam, string texParam)
 	{
 		var result = new List<ShaderMaterial>();
 		if (root == null)
@@ -280,11 +337,15 @@ public partial class CaptureSceneScreenshot : Node
 			return result;
 		}
 
-		CollectFaceShadowMaterialsRecursive(root, result);
+		CollectFlagMaterialsRecursive(root, result, useParam, texParam);
 		return result;
 	}
 
-	private static void CollectFaceShadowMaterialsRecursive(Node node, List<ShaderMaterial> result)
+	private static void CollectFlagMaterialsRecursive(
+		Node node,
+		List<ShaderMaterial> result,
+		string useParam,
+		string texParam)
 	{
 		if (node is MeshInstance3D meshInstance && meshInstance.Mesh != null)
 		{
@@ -292,7 +353,7 @@ public partial class CaptureSceneScreenshot : Node
 			for (int i = 0; i < surfaces; i++)
 			{
 				Material mat = meshInstance.GetActiveMaterial(i);
-				if (mat is ShaderMaterial shaderMaterial && HasFaceShadowEnabled(shaderMaterial))
+				if (mat is ShaderMaterial shaderMaterial && HasFlagOrTexture(shaderMaterial, useParam, texParam))
 				{
 					result.Add(shaderMaterial);
 				}
@@ -301,19 +362,19 @@ public partial class CaptureSceneScreenshot : Node
 
 		foreach (Node child in node.GetChildren())
 		{
-			CollectFaceShadowMaterialsRecursive(child, result);
+			CollectFlagMaterialsRecursive(child, result, useParam, texParam);
 		}
 	}
 
-	private static bool HasFaceShadowEnabled(ShaderMaterial material)
+	private static bool HasFlagOrTexture(ShaderMaterial material, string useParam, string texParam)
 	{
-		Variant flag = material.GetShaderParameter(ShaderParams.UseFaceShadow);
+		Variant flag = material.GetShaderParameter(useParam);
 		if (flag.VariantType == Variant.Type.Bool && flag.AsBool())
 		{
 			return true;
 		}
 
-		Variant tex = material.GetShaderParameter(ShaderParams.FaceShadowTex);
+		Variant tex = material.GetShaderParameter(texParam);
 		return tex.VariantType == Variant.Type.Object && tex.AsGodotObject() is Texture2D;
 	}
 
@@ -435,13 +496,159 @@ public partial class CaptureSceneScreenshot : Node
 		};
 	}
 
-	private static List<FaceShot> BuildFaceShots()
+	private static List<FlagShot> BuildFaceShots()
 	{
-		return new List<FaceShot>
+		return new List<FlagShot>
 		{
 			new("face_ndl.png", false),
 			new("face_map.png", true),
 		};
+	}
+
+	private static List<FlagShot> BuildHairShots()
+	{
+		return new List<FlagShot>
+		{
+			new("hair_kajiya.png", false),
+			new("hair_mask.png", true),
+		};
+	}
+
+	private static List<OutlineShot> BuildOutlineShots()
+	{
+		return new List<OutlineShot>
+		{
+			new(
+				"outline_hull.png",
+				false,
+				ToonOutlineCompositorEffect.OutlineDebugMode.Final,
+				0.0f),
+			new(
+				"outline_debug_depth.png",
+				true,
+				ToonOutlineCompositorEffect.OutlineDebugMode.RawDepth,
+				0.0f),
+			new(
+				"outline_debug_normal.png",
+				true,
+				ToonOutlineCompositorEffect.OutlineDebugMode.DepthEdges,
+				0.0f),
+			new(
+				"outline_comp.png",
+				true,
+				ToonOutlineCompositorEffect.OutlineDebugMode.Final,
+				0.0f),
+			new(
+				"outline_highlight.png",
+				true,
+				ToonOutlineCompositorEffect.OutlineDebugMode.Final,
+				0.01f),
+		};
+	}
+
+	private void ProcessOutlineSweep()
+	{
+		if (_outlineShots == null || _shotIndex >= _outlineShots.Count)
+		{
+			RestoreOutlineEffect();
+			RestoreSpin();
+			SetProcess(false);
+			GetTree().Quit();
+			return;
+		}
+
+		if (!IsSceneReady())
+		{
+			return;
+		}
+
+		if (_outlineEffect == null)
+		{
+			_outlineEffect = FindOutlineEffect();
+			if (_outlineEffect == null)
+			{
+				GD.PushError("capture_scene_screenshot: outline-ab needs ToonOutlineCompositorEffect on WorldEnvironment");
+				SetProcess(false);
+				GetTree().Quit();
+				return;
+			}
+
+			_savedOutlineEnabled = _outlineEffect.Enabled;
+			_savedHighlightStrength = _outlineEffect.HighlightStrength;
+			_savedDebugMode = _outlineEffect.DebugMode;
+			FreezeSpin(GetNodeOrNull(RequiredNodePath));
+		}
+
+		if (!_shotApplied)
+		{
+			ApplyOutlineShot(_outlineShots[_shotIndex]);
+			_shotApplied = true;
+			_waitingForSettle = true;
+			_settleCount = 0;
+			return;
+		}
+
+		_settleCount++;
+		if (_settleCount < SettleFrames)
+		{
+			return;
+		}
+
+		OutlineShot done = _outlineShots[_shotIndex];
+		CaptureOnce(done.FileName);
+		GD.Print($"capture_scene_screenshot: outline-ab {_shotIndex + 1}/{_outlineShots.Count} -> {done.FileName}");
+
+		_shotIndex++;
+		_shotApplied = false;
+		_waitingForSettle = false;
+		_settleCount = 0;
+
+		if (_shotIndex >= _outlineShots.Count)
+		{
+			RestoreOutlineEffect();
+			RestoreSpin();
+			SetProcess(false);
+			GetTree().Quit();
+		}
+	}
+
+	private void ApplyOutlineShot(OutlineShot shot)
+	{
+		_outlineEffect.Enabled = shot.Enabled;
+		_outlineEffect.DebugMode = shot.DebugMode;
+		_outlineEffect.HighlightStrength = shot.HighlightStrength;
+	}
+
+	private void RestoreOutlineEffect()
+	{
+		if (_outlineEffect == null || !GodotObject.IsInstanceValid(_outlineEffect))
+		{
+			return;
+		}
+
+		_outlineEffect.Enabled = _savedOutlineEnabled;
+		_outlineEffect.HighlightStrength = _savedHighlightStrength;
+		_outlineEffect.DebugMode = _savedDebugMode;
+	}
+
+	private ToonOutlineCompositorEffect FindOutlineEffect()
+	{
+		WorldEnvironment world = GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
+		Compositor compositor = world?.Compositor;
+		if (compositor?.CompositorEffects == null)
+		{
+			return null;
+		}
+
+		foreach (CompositorEffect effect in compositor.CompositorEffects)
+		{
+			if (effect is ToonOutlineCompositorEffect outline)
+			{
+				return outline;
+			}
+		}
+
+		return null;
 	}
 
 	private static bool HasUserArg(string flag)

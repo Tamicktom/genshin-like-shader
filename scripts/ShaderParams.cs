@@ -64,14 +64,20 @@ public static class ShaderParams
 	public const string OutlineSaturation = "outline_saturation";
 	public const string OutlineWidth = "outline_width";
 	public const string OutlineDepthBias = "outline_depth_bias";
+	public const string OutlineDepthFlatten = "outline_depth_flatten";
 
 	//* Extra maps (LookSlot; missing tex = old path)
 	public const string FaceShadowTex = "face_shadow_tex";
 	public const string UseFaceShadow = "use_face_shadow";
 	public const string HeadForward = "head_forward";
 	public const string HeadRight = "head_right";
+	public const string HeadPosition = "head_position";
 	public const string ControlTex = "control_tex";
 	public const string UseControlTex = "use_control_tex";
+	public const string HairHighlightTex = "hair_highlight_tex";
+	public const string UseHairHighlight = "use_hair_highlight";
+	public const string HairHighlightBlend = "hair_highlight_blend";
+	public const string HairHighlightFresnel = "hair_highlight_fresnel";
 	public const string DetailNormalTex = "detail_normal_tex";
 	public const string UseDetailNormal = "use_detail_normal";
 }

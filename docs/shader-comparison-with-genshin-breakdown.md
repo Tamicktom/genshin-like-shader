@@ -14,14 +14,14 @@ The Unity write-up is a reconstruction, not Hoyoverse source. It is still the cl
 | Multiple lights | Godot `light()` runs per light | Yes |
 | Cast shadows into the cel band | `ATTENUATION` remapped, not multiplied to black | Close |
 | Outer (second) shadow band | Single terminator only | Missing |
-| Anisotropic hair | Dual-lobe Kajiya-Kay, gated by shade | Partial |
+| Anisotropic hair | Painted streak mask + Fresnel suppress; Kajiya-Kay fallback | Close |
 | Face shadow texture (R/G lightmap) | Painted SDF on Face slot + head axes; NdotL fallback | Close |
 | Metallic (half-vector gradient / 1D matcap) | Path + shared ramp ready; Raiden metal preset uses Phong (flag off) | Partial |
 | Multiply by light color | `LIGHT_COLOR * light_intensity` | Yes |
 | Fog | Scene `Environment` fog, very light | Partial |
-| Outline | Inverted hull (`NextPass`), not depth/normal Sobel | Different approach |
-| Special face outline (suppress inner face edges) | Face slot disables the hull entirely | Workaround |
-| Edge highlight (white Sobel rim, not Fresnel) | Fresnel rim on the lit side | Different approach |
+| Outline | Reverse-Z depth Sobel compositor + inverted hull (`NextPass`) fallback | Close |
+| Special face outline (suppress inner face edges) | Face/weapon hull-off; relative depth threshold (no fragment `DEPTH` write — that broke MSAA) | Partial |
+| Edge highlight (white Sobel rim, not Fresnel) | Compositor far-side depth edge + Y offset; cloth/hair Fresnel rim 0 | Close |
 | Custom cartoon tonemapper (Gran Turismo) | Godot Filmic (`tonemap_mode = 2`) + `adjustment_saturation = 1.1`; glow off (Phase 3 A/B; GT compositor not needed) | Partial |
 | Dithering | None | Missing |
 | Glasses parallax | Not in original Genshin; we do not have it | N/A |
@@ -32,14 +32,13 @@ The Unity write-up is a reconstruction, not Hoyoverse source. It is still the cl
 
 Mendez splits the look into **character shader** + **screen-space post-process**. Lighting, outer shadow, hair, face map, metal, and fog live in the material. Outline, face-outline suppression, edge highlight, tonemap, and dithering live after the scene is drawn.
 
-This project keeps almost everything **on the mesh**:
+This project keeps most lighting **on the mesh**, with Phase 7 adding a screen-space compositor pass:
 
 - Base pass: `genshin_toon.gdshader` (opaque spatial, custom `light()`).
-- Outline pass: `genshin_outline.gdshader` as `material.NextPass`.
+- Outline hull: `genshin_outline.gdshader` as `material.NextPass` (albedo-tinted).
+- Compositor outline / edge highlight: `ToonOutlineCompositorEffect` on `WorldEnvironment` (resolved-depth Sobel).
 - Tonemap, glow, and fog: Godot `WorldEnvironment` in `scenes/main.tscn`.
 - Per-part knobs: `ToonPreset` resources applied by `ApplyCharacterLook.cs`.
-
-That split is the main reason several Genshin-looking features are missing or approximated. Depth/normal Sobel, a white silhouette highlight, and a custom tonemapper all need a blit / compositor pass that this repo does not have.
 
 Godot also differs from Unity URP in how lighting is assembled. Albedo is written in `fragment()`, then `DIFFUSE_LIGHT` and `SPECULAR_LIGHT` accumulate in `light()`. The engine multiplies albedo by diffuse. Mendez does `lerp(shadow, base, shade) * texture` in one color. The visual intent is the same; the light-side tint is not. We lerp toward **white**, so the lit region is “albedo × light color”. They lerp toward a separate `_BaseColor`, so the artist can warm the lit band independently of the texture.
 
@@ -98,21 +97,13 @@ It does not need a new texture. It does need two extra uniforms on `ToonPreset`.
 
 Mendez: isolate a streak with a **texture mask** and `LightDot`; kill the sides with a Fresnel (`pow(1 - saturate(dot(N, V)))`). Highlight exists only in light.
 
-Ours (hair preset: `UseAnisotropicSpecular = true`):
-
-- Strand axis from `mix(TANGENT, BINORMAL, hair_flow_blend)` (default BINORMAL / UV.v).
-- Two Kajiya-Kay lobes (`sin(T·H)` powers) with opposite shifts.
-- Soft `smoothstep` band, multiplied by `shade` so it dies in shadow.
-- A **separate** Fresnel rim (`rim_strength = 0.04` on hair), not used to mask the spec.
+**Ours (Phase 6):** Hair slot can bind `HairHighlightTex` (`looks/raiden_hair_highlight.png`, greyscale streaks extracted from the purple islands of `gltf_embedded_1`). When bound, `light()` mixes toward `mask * shade * (1 - fresnel)` with `hair_highlight_blend` (default 1) and a dedicated `hair_highlight_fresnel` (default 5). Additive rim is gated off while the mask drives spec. Missing map → dual-lobe Kajiya-Kay (`UseAnisotropicSpecular = true`, quiet `specular_strength = 0.07`). A/B: `--hair-ab`.
 
 **Observations**
 
-- We model *strand lighting*. They model *a painted streak that happens to be view-dependent*. Genshin’s hair highlight is often a packed-channel mask (specular shape in one channel), not a true anisotropic BRDF.
-- Dual-lobe Kajiya-Kay can look more “CG hair” than “anime hair” if `specular_strength` is high. The current hair preset keeps it quiet (`0.07`), which is the right bias.
-- We have no hair highlight mask, no spec shift texture, and no dedicated “remove sides with Fresnel” on the spec itself. The general rim is the opposite polarity of their hair Fresnel: they *suppress* the highlight at the silhouette; we *add* a rim there.
-- `LightDot` gating is present (`spec * shade`). That part matches.
-
-Highest-value next step for hair is a mask texture (or a packed channel from the official maps) rather than more BRDF lobes.
+- Genshin’s hair highlight is a packed-channel mask, not a true anisotropic BRDF. The extracted albedo streaks are lookdev-quality, not Hoyoverse lightmaps — re-run `tools/generate_raiden_hair_highlight.py` to iterate.
+- Dual-lobe Kajiya-Kay remains the fallback and can still be mixed in via `HairHighlightBlend < 1`.
+- Fresnel polarity now matches the breakdown when the mask is on (suppress at silhouette). The general additive rim stays for cloth/face and for hair without a map.
 
 ---
 
@@ -170,22 +161,9 @@ Mendez argues the **traditional** method (duplicate, scale, flip normals) is les
 3. Combine
 4. On faces, push depth so eyes / nose / mouth do not ink
 
-We use the method he rejects: inverted hull, `cull_front`, expand in **clip XY**, flatten view-space normal Z so fingertips do not grow spikes, optional `outline_depth_bias` to pull the hull toward the camera. Line color is darkened, slightly oversaturated albedo, so purple cloth gets a purple line.
+**Ours (Phase 7):** Both paths. The inverted hull (`genshin_outline.gdshader` as `NextPass`) still supplies albedo-tinted lines on hair/cloth/metal. A Forward+ `CompositorEffect` (`ToonOutlineCompositorEffect` + `toon_outline.glsl`) adds screen-space edges via **relative reverse-Z depth Sobel** on the MSAA-resolved `R32Sfloat` depth target (`AccessResolvedDepth`, no `NeedsNormalRoughness` — that flag blacks out custom `light()`). A fragment `DEPTH` write for face flatten was tried and **removed**: even a conditional assignment disables early-Z/MSAA coverage and stipples every mesh sharing `genshin_toon`. Face/weapon stay hull-off; inner face ink is limited by the relative threshold.
 
-**What we already do well**
-
-- Screen-pixel width (`outline_width * clip_pos.w / VIEWPORT_SIZE`) is more stable than object-space extrusion.
-- Flattening N.z is the right fix for claw spikes.
-- Albedo-tinted ink matches Genshin’s colored outlines better than a flat black line.
-- Face and weapon skip the hull. That is a pragmatic stand-in for “special face outline”: no inner face edges, at the cost of no outer head contour from this pass either. The face then relies on painted lines in the texture.
-
-**What we cannot do with a hull**
-
-- Internal silhouettes on the same mesh (belt over dress, hair over shoulder on one surface).
-- Variable width from vertex color (Genshin often packs outline width in verts). README already flags this.
-- Suppressing only *some* inner edges while keeping the jaw/hairline. Depth-hack face outline is a post-process trick.
-
-A compositor outline (depth + normals, Roystan-style, as Mendez cites) is the real Genshin match. The hull can stay as a fallback for platforms without a blit, or for colored inner lines that depth-Sobel will miss.
+A/B: `--outline-ab` → `screenshots/outline_*.png`.
 
 ---
 
@@ -193,24 +171,9 @@ A compositor outline (depth + normals, Roystan-style, as Mendez cites) is the re
 
 Mendez is explicit: the white rim around the character **is not a Fresnel**. It is a Sobel on the depth buffer, kept on the side with greater depth, then shifted slightly down so it sits like an anime backlight.
 
-We implement the thing he says it is not:
-
-```text
-fresnel = pow(1 - N·V, rim_power)
-SPECULAR_LIGHT += rim_color * fresnel * rim_strength * shade * LIGHT_COLOR
-```
-
-Presets keep it timid (cloth `0.06`, hair `0.04`, face `0.08`). It still:
-
-- follows surface curvature, not the character silhouette
-- dies on backfaces / in shadow (`* shade`)
-- cannot put a continuous white line around the whole figure
-- cannot be offset downward in screen space
-
-For a Genshin-like plate, this rim should probably go *down*, not up, once a Sobel edge-highlight pass exists. Until then it is a reasonable cheap substitute and should stay subtle.
+**Ours (Phase 7):** Compositor far-side depth edge + a few pixels of screen-Y offset, additive white. Cloth/hair `RimStrength = 0` so Fresnel no longer doubles as the anime rim. Face/weapon/metal may still carry a timid Fresnel for local sheen.
 
 ---
-
 ## Tonemap, dithering, glow
 
 Godot 4.7 `Environment.tonemap_mode` enum: Linear `0`, Reinhardt `1`, **Filmic `2`**, ACES `3`, AGX `4`. Older notes in this repo that called `tonemap_mode = 2` “ACES” were wrong.
@@ -241,20 +204,20 @@ The Unity breakdown is one character shader with many keywords. This repo splits
 
 | Slot (`looks/raiden_shogun.tres`) | Preset | Outline | Notes vs Genshin |
 | --- | --- | --- | --- |
-| Face | Warm terminator, weak spec | Off | No face map |
-| Hair | Cool shadow, anisotropic on | On | No highlight mask |
+| Face | Warm terminator, weak spec | Off | Painted R/G SDF + head axes; NdotL fallback |
+| Hair | Cool shadow; mask highlight (Kajiya-Kay fallback) | On | `HairHighlightTex` from albedo streaks |
 | Weapon | Metal Phong | Off | Hull would hollow the blade |
 | Metal | Phong (gradient flag off on Raiden) | On | Slot `*acc*` before Hair so Hair_Accs is metal |
 | Dress / body / fallback | Cloth | On (body has 3 mm depth bias) | Outer shadow on cloth/hair |
 
-That data-driven split is healthier than a 200-uniform mega-shader, and it is not in Mendez’s article. Extra maps now live on `LookSlot` (`FaceShadowTex`, `ControlTex`, `DetailNormalTex`); `ApplyCharacterLook` binds them with `use_*` flags. Face SDF is assigned on Raiden; control / detail-normal sampling waits for later phases.
+That data-driven split is healthier than a 200-uniform mega-shader, and it is not in Mendez’s article. Extra maps live on `LookSlot` (`FaceShadowTex`, `HairHighlightTex`, `ControlTex`, `DetailNormalTex`); `ApplyCharacterLook` binds them with `use_*` flags. Face SDF and hair highlight are assigned on Raiden; control / detail-normal sampling waits for later phases.
 
 ---
 
 ## What we have that the breakdown does not discuss
 
 - Half-Lambert wrap and an explicit shadow-map remap with `fwidth` AA.
-- Dual-lobe shifted hair specular (more “offline anisotropic” than Genshin).
+- Dual-lobe shifted hair specular as a fallback when no highlight mask is bound.
 - Per-slot double-sided + outline width + depth bias.
 - Opaque-only discipline (`discard` instead of `ALPHA`) so depth sorting stays correct — important in Godot, invisible in the Unity post.
 - MSAA 4x + FXAA, 8K orthogonal shadow atlas, Ultra PCF.
@@ -268,12 +231,12 @@ These are production/demo choices, not Genshin features. They should stay even i
 
 Ordered by how much they move a still toward the Unity/Genshin plates:
 
-1. **Face lightmap** — without it the head will always look like generic toon.
+1. **Face lightmap** — painted SDF landed (Phase 5); official Hoyoverse maps still optional.
 2. **Outer shadow band** — cheap, no new textures, big “painted terminator” win (landed on hair/cloth).
 3. **Metallic half-vector gradient** — path + ramp landed; Raiden metal preset leaves it off (Phong).
 4. **Custom tonemap (GT / saturation-preserving)** — Phase 3 locked Filmic + sat `1.1`; full GT compositor still optional if that grade ever fails.
-5. **Post-process outline + edge highlight** — hull cannot do inner edges or the white anime rim.
-6. **Hair highlight mask** — Kajiya-Kay is optional once a painted streak exists.
+5. **Post-process outline + edge highlight** — Phase 7: depth Sobel compositor + hull fallback; cloth/hair Fresnel rim off.
+6. **Hair highlight mask** — albedo-extracted streak + Fresnel suppress landed (Phase 6); Kajiya-Kay remains fallback.
 7. **Dither** — last, after the bands get harder.
 
 Glasses parallax is an extra in the Unity post and can stay out of scope.
@@ -287,6 +250,7 @@ Staged implementation plan: [`genshin-like-refactor-plan.md`](genshin-like-refac
 - Unity source: [`genshin-impact-character-shader-breakdown.md`](genshin-impact-character-shader-breakdown.md)
 - Toon pass: `shaders/genshin_toon.gdshader`
 - Hull pass: `shaders/genshin_outline.gdshader`
+- Compositor outline: `scripts/ToonOutlineCompositorEffect.cs`, `shaders/toon_outline.glsl`
 - Knobs: `scripts/resources/ToonPreset.cs`, `materials/presets/*.tres`
 - Binding: `scripts/ApplyCharacterLook.cs`
 - Scene grade: `scenes/main.tscn` (`Environment` + `Sun`)

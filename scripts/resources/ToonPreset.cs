@@ -98,6 +98,19 @@ public partial class ToonPreset : Resource
 	[Export(PropertyHint.Range, "1.0,256.0")]
 	public float HairSpecSecondarySize { get; set; } = 24.0f;
 
+	/// <summary>
+	/// When a hair highlight mask is bound: 0 = Kajiya-Kay only, 1 = mask only.
+	/// </summary>
+	[Export(PropertyHint.Range, "0.0,1.0")]
+	public float HairHighlightBlend { get; set; } = 1.0f;
+
+	/// <summary>
+	/// Fresnel power that suppresses the hair highlight toward the silhouette.
+	/// Independent of RimPower so cloth/face rim stays unchanged.
+	/// </summary>
+	[Export(PropertyHint.Range, "0.5,8.0")]
+	public float HairHighlightFresnel { get; set; } = 5.0f;
+
 	[ExportGroup("Metallic Gradient")]
 	/// <summary>
 	/// When true and MetallicGradientTex is set, replace Phong / Kajiya-Kay with a
@@ -150,6 +163,8 @@ public partial class ToonPreset : Resource
 		material.SetShaderParameter(ShaderParams.HairSpecSecondary, HairSpecSecondary);
 		material.SetShaderParameter(ShaderParams.HairSpecSecondaryShift, HairSpecSecondaryShift);
 		material.SetShaderParameter(ShaderParams.HairSpecSecondarySize, HairSpecSecondarySize);
+		material.SetShaderParameter(ShaderParams.HairHighlightBlend, HairHighlightBlend);
+		material.SetShaderParameter(ShaderParams.HairHighlightFresnel, HairHighlightFresnel);
 
 		bool useMetallic = UseMetallicGradient && MetallicGradientTex != null;
 		material.SetShaderParameter(ShaderParams.UseMetallicGradient, useMetallic);

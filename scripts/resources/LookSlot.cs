@@ -41,6 +41,16 @@ public partial class LookSlot : Resource
 	[Export(PropertyHint.Range, "0.0,0.4")]
 	public float OutlineDepthBias { get; set; }
 
+	/// <summary>
+	/// Unused at runtime: writing fragment DEPTH (even behind this flag) breaks
+	/// MSAA coverage on every mesh that shares genshin_toon. Kept so old looks load.
+	/// </summary>
+	[Export]
+	public bool FlattenOutlineDepth { get; set; }
+
+	[Export(PropertyHint.Range, "0.0,1.0")]
+	public float OutlineDepthFlatten { get; set; }
+
 	[ExportGroup("Extra Maps")]
 	/// <summary>
 	/// R/G face lightmap (0–180° / 180–360°). Null = NdotL fallback.
@@ -53,6 +63,12 @@ public partial class LookSlot : Resource
 	/// </summary>
 	[Export]
 	public Texture2D ControlTex { get; set; }
+
+	/// <summary>
+	/// Greyscale hair highlight streak mask. Null = Kajiya-Kay / Phong fallback.
+	/// </summary>
+	[Export]
+	public Texture2D HairHighlightTex { get; set; }
 
 	/// <summary>
 	/// Detail normal for metal UV warp etc. Unused until later phases.

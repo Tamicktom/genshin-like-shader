@@ -30,4 +30,4 @@ HairSpecSecondaryShift = -0.12
 HairSpecSecondarySize = 24.0
 RimColor = Color(0.62, 0.66, 0.88, 1)
 RimPower = 4.5
-RimStrength = 0.06
+RimStrength = 0.0

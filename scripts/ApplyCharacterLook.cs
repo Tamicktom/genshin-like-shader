@@ -31,6 +31,7 @@ public partial class ApplyCharacterLook : Node3D
 	public NodePath HeadNodePath { get; set; } = new NodePath("HeadAxes");
 
 	private readonly List<ShaderMaterial> _faceShadowMaterials = new();
+	private readonly List<ShaderMaterial> _headAxisMaterials = new();
 	private Node3D _headNode;
 
 	public override void _Ready()
@@ -41,12 +42,12 @@ public partial class ApplyCharacterLook : Node3D
 		}
 
 		ResolveHeadNode();
-		SetProcess(_faceShadowMaterials.Count > 0);
+		SetProcess(_headAxisMaterials.Count > 0);
 	}
 
 	public override void _Process(double delta)
 	{
-		if (_faceShadowMaterials.Count == 0)
+		if (_headAxisMaterials.Count == 0)
 		{
 			return;
 		}
@@ -64,8 +65,9 @@ public partial class ApplyCharacterLook : Node3D
 		// Unity-style forward/right: Godot +Z faces the camera when the character does.
 		Vector3 forward = basis.Z.Normalized();
 		Vector3 right = basis.X.Normalized();
+		Vector3 position = _headNode.GlobalTransform.Origin;
 
-		foreach (ShaderMaterial material in _faceShadowMaterials)
+		foreach (ShaderMaterial material in _headAxisMaterials)
 		{
 			if (material == null || !GodotObject.IsInstanceValid(material))
 			{
@@ -74,12 +76,14 @@ public partial class ApplyCharacterLook : Node3D
 
 			material.SetShaderParameter(ShaderParams.HeadForward, forward);
 			material.SetShaderParameter(ShaderParams.HeadRight, right);
+			material.SetShaderParameter(ShaderParams.HeadPosition, position);
 		}
 	}
 
 	public void ApplyToTree(Node root)
 	{
 		_faceShadowMaterials.Clear();
+		_headAxisMaterials.Clear();
 
 		if (Look == null)
 		{
@@ -99,7 +103,7 @@ public partial class ApplyCharacterLook : Node3D
 
 		ApplyRecursive(root);
 		ResolveHeadNode();
-		SetProcess(_faceShadowMaterials.Count > 0);
+		SetProcess(_headAxisMaterials.Count > 0);
 	}
 
 	private void ResolveHeadNode()
@@ -200,9 +204,18 @@ public partial class ApplyCharacterLook : Node3D
 
 		BindExtraMap(material, ShaderParams.FaceShadowTex, ShaderParams.UseFaceShadow, resolved.FaceShadowTex);
 		BindExtraMap(material, ShaderParams.ControlTex, ShaderParams.UseControlTex, resolved.ControlTex);
+		BindExtraMap(material, ShaderParams.HairHighlightTex, ShaderParams.UseHairHighlight, resolved.HairHighlightTex);
 		BindExtraMap(material, ShaderParams.DetailNormalTex, ShaderParams.UseDetailNormal, resolved.DetailNormalTex);
 
+		float flatten = resolved.FlattenOutlineDepth ? resolved.OutlineDepthFlatten : 0.0f;
+		material.SetShaderParameter(ShaderParams.OutlineDepthFlatten, flatten);
+
 		preset?.ApplyToMaterial(material);
+
+		if (resolved.FaceShadowTex != null || flatten > 0.001f)
+		{
+			_headAxisMaterials.Add(material);
+		}
 
 		if (resolved.FaceShadowTex != null)
 		{
