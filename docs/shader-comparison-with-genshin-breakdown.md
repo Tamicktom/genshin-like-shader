@@ -10,37 +10,37 @@ The Unity write-up is a reconstruction, not Hoyoverse source. It is still the cl
 
 | Feature (Mendez / Genshin look) | This project | Match |
 | --- | --- | --- |
-| Custom cel lighting (NdotL → soft step → tint) | Half-Lambert + `smoothstep` + `shadow_color` | Close |
+| Custom cel lighting (NdotL → soft step → tint) | `light_wrap` + two-sided `smoothstep` + `mix(shadow_color, lit_color, shade)` | Close |
 | Multiple lights | Godot `light()` runs per light | Yes |
 | Cast shadows into the cel band | `ATTENUATION` remapped, not multiplied to black | Close |
-| Outer (second) shadow band | Single terminator only | Missing |
+| Outer (second) shadow band | `OuterShadow*` on hair (`0.85`) / cloth (`0.75`); face/metal/weapon off | Close |
 | Anisotropic hair | Painted streak mask + Fresnel suppress; Kajiya-Kay fallback | Close |
 | Face shadow texture (R/G lightmap) | Painted SDF on Face slot + head axes; NdotL fallback | Close |
 | Metallic (half-vector gradient / 1D matcap) | Path + shared ramp ready; Raiden metal preset uses Phong (flag off) | Partial |
 | Multiply by light color | `LIGHT_COLOR * light_intensity` | Yes |
 | Fog | Scene `Environment` fog, very light | Partial |
-| Outline | Reverse-Z depth Sobel compositor + inverted hull (`NextPass`) fallback | Close |
+| Outline | Reverse-Z depth Sobel compositor (default on) + inverted hull (`NextPass`) fallback | Close |
 | Special face outline (suppress inner face edges) | Face/weapon hull-off; relative depth threshold (no fragment `DEPTH` write — that broke MSAA) | Partial |
 | Edge highlight (white Sobel rim, not Fresnel) | Compositor far-side depth edge + Y offset; cloth/hair Fresnel rim 0 | Close |
 | Custom cartoon tonemapper (Gran Turismo) | Godot Filmic (`tonemap_mode = 2`) + `adjustment_saturation = 1.1`; glow off (Phase 3 A/B; GT compositor not needed) | Partial |
-| Dithering | None | Missing |
+| Dithering | Ordered Bayer 4×4 on `shade` across the terminator (hair/cloth); not in the compositor | Close |
 | Glasses parallax | Not in original Genshin; we do not have it | N/A |
 
 ---
 
 ## Pipeline context
 
-Mendez splits the look into **character shader** + **screen-space post-process**. Lighting, outer shadow, hair, face map, metal, and fog live in the material. Outline, face-outline suppression, edge highlight, tonemap, and dithering live after the scene is drawn.
+Mendez splits the look into **character shader** + **screen-space post-process**. Lighting, outer shadow, hair, face map, metal, and fog live in the material. Outline, face-outline suppression, edge highlight, and tonemap live after the scene is drawn. Mendez also lists dithering as a post feature.
 
-This project keeps most lighting **on the mesh**, with Phase 7 adding a screen-space compositor pass:
+This project keeps most lighting **on the mesh**, with Phase 7 adding a screen-space compositor pass. Terminator dither (Phase 8) stays in the toon `light()` so it only hits the cel cut:
 
 - Base pass: `genshin_toon.gdshader` (opaque spatial, custom `light()`).
 - Outline hull: `genshin_outline.gdshader` as `material.NextPass` (albedo-tinted).
-- Compositor outline / edge highlight: `ToonOutlineCompositorEffect` on `WorldEnvironment` (resolved-depth Sobel).
+- Compositor outline / edge highlight: `ToonOutlineCompositorEffect` on `WorldEnvironment` (resolved-depth Sobel, default on).
 - Tonemap, glow, and fog: Godot `WorldEnvironment` in `scenes/main.tscn`.
 - Per-part knobs: `ToonPreset` resources applied by `ApplyCharacterLook.cs`.
 
-Godot also differs from Unity URP in how lighting is assembled. Albedo is written in `fragment()`, then `DIFFUSE_LIGHT` and `SPECULAR_LIGHT` accumulate in `light()`. The engine multiplies albedo by diffuse. Mendez does `lerp(shadow, base, shade) * texture` in one color. The visual intent is the same; the light-side tint is not. We lerp toward **white**, so the lit region is “albedo × light color”. They lerp toward a separate `_BaseColor`, so the artist can warm the lit band independently of the texture.
+Godot also differs from Unity URP in how lighting is assembled. Albedo is written in `fragment()`, then `DIFFUSE_LIGHT` and `SPECULAR_LIGHT` accumulate in `light()`. The engine multiplies albedo by diffuse. Mendez does `lerp(shadow, base, shade) * texture` in one color. The visual intent is the same; we now also expose `lit_color` so the lit band can be warmed or cooled independently of the albedo (default white = albedo × light).
 
 ---
 
@@ -56,18 +56,19 @@ Mendez’s core:
 Ours (`genshin_toon.gdshader`, `light()`):
 
 1. `n_dot_l = clamp(dot(NORMAL, LIGHT), 0, 1)`
-2. **Half-Lambert**: `half_lambert = n_dot_l * 0.5 + 0.5`
-3. `smoothstep(threshold - soft, threshold + soft, half_lambert)`
+2. **Wrap**: `wrap_ndl = mix(n_dot_l, 1.0, light_wrap)` (`0` = raw NdotL, `0.5` = Half-Lambert)
+3. Two-sided `smoothstep(threshold ± soft, wrap_ndl)` (optional one-sided step behind `use_one_sided_step`)
 4. `min` with a remapped shadow-map term
-5. `mix(shadow_color, vec3(1.0), shade)`
-6. Add `LIGHT_COLOR * light_intensity`
-7. Ambient as `EMISSION = ALBEDO * ambient_color * ambient_strength`
+5. Optional ordered Bayer dither on `shade`, gated to the terminator (`4 * shade * (1 - shade)`)
+6. `mix(shadow_color, lit_color, shade)` (plus outer-band mix when strength > 0)
+7. Add `LIGHT_COLOR * light_intensity`
+8. Ambient as `EMISSION = ALBEDO * ambient_color * ambient_strength`
 
 **Observations**
 
-- Half-Lambert wraps light onto the back hemisphere. Genshin’s terminator is a hard-ish cut on raw NdotL. Ours keeps more of the mesh in the “lit” band and needs `shadow_threshold` (~0.47–0.52) to push the cut back. That is a different lighting model, not just a different smoothness.
-- Their `_LightSmooth = 0.1` is a one-sided step from 0. Ours is two-sided around a threshold, with per-preset smoothness (face `0.055`, hair `0.025`, cloth `0.032`). Hair is closer to the sharp Genshin cut; face is softer on purpose.
-- They tint **both** bands. We only tint the shadow. Lit cloth/skin therefore follows the albedo more faithfully; we cannot warm the lit side without changing the texture or adding a `_lit_color` uniform.
+- Hair/cloth use less wrap (`0.2` / `0.3`) and narrower smoothness than the face, so their terminator is closer to Genshin’s hard cut while the face stays softer for the painted SDF.
+- Their `_LightSmooth = 0.1` is a one-sided step from 0. Ours defaults to two-sided around a threshold; `use_one_sided_step` exists but Raiden presets keep it off.
+- They tint **both** bands. We now do too via `lit_color` (white = albedo × light; cloth uses a slight warm tint).
 - Cast shadows are handled in the Genshin spirit: they join the same cool cel tint instead of going black. The `fwidth(ATTENUATION)` widen is ours and is a good anti-crawl trick while the turntable spins.
 - Multiple lights work in both. Extra lights in Godot **add** more `DIFFUSE_LIGHT`, so a fill light can lift the shadow tint toward white and flatten the two-tone look. Genshin characters are usually keyed by one sun; the demo matches that (`Sun` energy `0.3`).
 
@@ -79,18 +80,9 @@ Ambient is a flat albedo-tinted fill through `EMISSION`, with `ambient_light_dis
 
 Mendez adds a **second** NdotL: offset, harder step, warmer (or at least different) tint. The screenshot shows a thin extra band sitting inside the main shadow on hair, clothes, and shoes.
 
-This shader has one `shade` value. There is no offset NdotL, no second mix, no outer-shadow color.
+**Ours (Phase 1):** `OuterShadowColor` / `Offset` / `Smoothness` / `Strength` on `ToonPreset`. After the main `shade`, a second two-sided cut at `shadow_threshold - offset` paints `(1 - shade) * shade_outer` into the outer tint. Strength `0` is a no-op. Hair `0.85`, cloth `0.75`; face/metal/weapon stay off so the face map and metal Phong are not muddied.
 
-**Why it matters:** that extra band is a large part of the “painted” terminator in Genshin. A single `smoothstep` looks like a cheap toon; two stacked steps look like a brush stroke. Hair would benefit first (cool main shadow + a slightly warmer or darker inner band).
-
-A faithful port would look roughly like:
-
-- `shade_main` — current term
-- `shade_outer` — same NdotL with a shifted threshold and smaller smoothness
-- `mix(outer_color, mix(shadow_color, lit, shade_main), shade_outer)`
-
-It does not need a new texture. It does need two extra uniforms on `ToonPreset`.
-
+**Why it matters:** that extra band is a large part of the “painted” terminator in Genshin. A single `smoothstep` looks like a cheap toon; two stacked steps look like a brush stroke.
 ---
 
 ## Anisotropic hair
@@ -181,7 +173,7 @@ Godot 4.7 `Environment.tonemap_mode` enum: Linear `0`, Reinhardt `1`, **Filmic `
 | | Mendez | This project |
 | --- | --- | --- |
 | Tonemap | Custom Gran Turismo (keeps saturation, tames highs) | Filmic (`tonemap_mode = 2`), exposure `1.0`, `adjustment_saturation = 1.1` |
-| Dither | Listed as a feature (likely 8-bit banding) | None |
+| Dither | Listed as a feature (likely 8-bit banding), usually in post | Ordered Bayer 4×4 on `shade` in `genshin_toon.gdshader`, gated to the terminator; hair/cloth `dither_strength = 0.03` |
 | Glow | Not the focus | Explicitly off (`glow_enabled = false`) |
 
 Mendez’s own comparison: no tonemap blows out; Neutral is flat; **ACES contrast-desaturates**; GT is the cartoon pick. Phase 3 A/B on this project (same sun, glow off, exposure `1.0`):
@@ -194,7 +186,7 @@ Mendez’s own comparison: no tonemap blows out; Neutral is flat; **ACES contras
 
 Fog A/B left density at `0.0012`; `0.008` milks the dress terminator toward the fog tint.
 
-Dithering only matters after a hard posterize. Our `smoothstep` bands are already a few percent wide, so banding is mild. It becomes useful if outer-shadow + harder steps land.
+**Ours (Phase 8):** Dither lives in the toon shader (not the compositor) so it only touches the cel terminator — a full-screen pass would re-detect shade cuts and ink every band. `dither_strength = 0` is today’s look; face/metal/weapon stay at 0. A/B: `--dither-ab` → `screenshots/dither_off.png` / `dither_on.png`.
 
 ---
 
@@ -205,10 +197,10 @@ The Unity breakdown is one character shader with many keywords. This repo splits
 | Slot (`looks/raiden_shogun.tres`) | Preset | Outline | Notes vs Genshin |
 | --- | --- | --- | --- |
 | Face | Warm terminator, weak spec | Off | Painted R/G SDF + head axes; NdotL fallback |
-| Hair | Cool shadow; mask highlight (Kajiya-Kay fallback) | On | `HairHighlightTex` from albedo streaks |
+| Hair | Cool shadow; mask highlight (Kajiya-Kay fallback) | On | `HairHighlightTex` from albedo streaks; outer shadow + dither |
 | Weapon | Metal Phong | Off | Hull would hollow the blade |
 | Metal | Phong (gradient flag off on Raiden) | On | Slot `*acc*` before Hair so Hair_Accs is metal |
-| Dress / body / fallback | Cloth | On (body has 3 mm depth bias) | Outer shadow on cloth/hair |
+| Dress / body / fallback | Cloth | On (body has 3 mm depth bias) | Outer shadow + terminator dither |
 
 That data-driven split is healthier than a 200-uniform mega-shader, and it is not in Mendez’s article. Extra maps live on `LookSlot` (`FaceShadowTex`, `HairHighlightTex`, `ControlTex`, `DetailNormalTex`); `ApplyCharacterLook` binds them with `use_*` flags. Face SDF and hair highlight are assigned on Raiden; control / detail-normal sampling waits for later phases.
 
@@ -229,15 +221,15 @@ These are production/demo choices, not Genshin features. They should stay even i
 
 ## Priority of gaps
 
-Ordered by how much they move a still toward the Unity/Genshin plates:
+Ordered by how much they move a still toward the Unity/Genshin plates (most items landed):
 
 1. **Face lightmap** — painted SDF landed (Phase 5); official Hoyoverse maps still optional.
-2. **Outer shadow band** — cheap, no new textures, big “painted terminator” win (landed on hair/cloth).
+2. **Outer shadow band** — landed on hair/cloth (Phase 1).
 3. **Metallic half-vector gradient** — path + ramp landed; Raiden metal preset leaves it off (Phong).
 4. **Custom tonemap (GT / saturation-preserving)** — Phase 3 locked Filmic + sat `1.1`; full GT compositor still optional if that grade ever fails.
-5. **Post-process outline + edge highlight** — Phase 7: depth Sobel compositor + hull fallback; cloth/hair Fresnel rim off.
+5. **Post-process outline + edge highlight** — Phase 7: depth Sobel compositor (default on) + hull fallback; cloth/hair Fresnel rim off.
 6. **Hair highlight mask** — albedo-extracted streak + Fresnel suppress landed (Phase 6); Kajiya-Kay remains fallback.
-7. **Dither** — last, after the bands get harder.
+7. **Dither** — Phase 8: ordered Bayer on the terminator in the toon shader (hair/cloth).
 
 Glasses parallax is an extra in the Unity post and can stay out of scope.
 

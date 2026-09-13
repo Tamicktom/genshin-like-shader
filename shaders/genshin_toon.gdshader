@@ -36,6 +36,12 @@ uniform float outer_shadow_offset : hint_range(0.0, 0.35) = 0.06;
 uniform float outer_shadow_smoothness : hint_range(0.001, 0.2) = 0.02;
 uniform float outer_shadow_strength : hint_range(0.0, 1.0) = 0.0;
 
+group_uniforms Dither;
+// Ordered Bayer on shade only, gated to the terminator. 0 = today's look.
+uniform float dither_strength : hint_range(0.0, 0.08) = 0.0;
+// Integer-ish pixel scale of the Bayer matrix (1 = one matrix cell per pixel).
+uniform float dither_scale : hint_range(0.25, 4.0) = 1.0;
+
 group_uniforms Specular;
 uniform vec4 specular_color : source_color = vec4(1.0, 0.96, 0.92, 1.0);
 uniform float specular_size : hint_range(1.0, 256.0) = 48.0;
@@ -81,15 +87,31 @@ uniform float hair_highlight_fresnel : hint_range(0.5, 8.0) = 5.0;
 uniform sampler2D detail_normal_tex : hint_normal, filter_linear_mipmap, repeat_disable;
 uniform bool use_detail_normal = false;
 
-// Passed fragment → light (TANGENT/BINORMAL/UV are not available inside light()).
+// Passed fragment → light (TANGENT/BINORMAL/UV/FRAGCOORD are not available inside light()).
 varying vec3 v_tangent;
 varying vec3 v_binormal;
 varying vec2 v_uv;
+varying vec2 v_fragcoord;
+
+// 4x4 Bayer matrix, values normalized to [0, 1).
+float bayer4(vec2 frag_xy) {
+	ivec2 p = ivec2(mod(floor(frag_xy), 4.0));
+	int index = p.y * 4 + p.x;
+	// Standard ordered dither thresholds / 16.
+	const float[16] bayer = float[16](
+		0.0 / 16.0, 8.0 / 16.0, 2.0 / 16.0, 10.0 / 16.0,
+		12.0 / 16.0, 4.0 / 16.0, 14.0 / 16.0, 6.0 / 16.0,
+		3.0 / 16.0, 11.0 / 16.0, 1.0 / 16.0, 9.0 / 16.0,
+		15.0 / 16.0, 7.0 / 16.0, 13.0 / 16.0, 5.0 / 16.0
+	);
+	return bayer[index];
+}
 
 void fragment() {
 	v_tangent = TANGENT;
 	v_binormal = BINORMAL;
 	v_uv = UV;
+	v_fragcoord = FRAGCOORD.xy;
 
 	if (!double_sided && !FRONT_FACING) {
 		discard;
@@ -165,6 +187,12 @@ void light() {
 	float cast_aa = max(cast_soft, fwidth(ATTENUATION) * 1.5);
 	float cast_shade = smoothstep(0.0, cast_aa, ATTENUATION);
 	float shade = min(ndl_shade, cast_shade);
+
+	// Ordered dither only across the terminator (peaks at shade = 0.5).
+	// Strength 0 is a no-op so old presets stay identical.
+	float dither_band = 4.0 * shade * (1.0 - shade);
+	float dither = (bayer4(v_fragcoord * dither_scale) - 0.5) * dither_strength * dither_band;
+	shade = clamp(shade + dither, 0.0, 1.0);
 
 	// Second NdotL cut inset into the shadow: a narrow tinted stripe at the
 	// terminator. Strength 0 leaves main_term alone (today's single band).

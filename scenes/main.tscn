@@ -57,6 +57,8 @@ shader_parameter/outer_shadow_color = Color(0.5, 0.35, 0.58, 1)
 shader_parameter/outer_shadow_offset = 0.06
 shader_parameter/outer_shadow_smoothness = 0.02
 shader_parameter/outer_shadow_strength = 0.0
+shader_parameter/dither_strength = 0.0
+shader_parameter/dither_scale = 1.0
 shader_parameter/specular_color = Color(1, 0.96, 0.92, 1)
 shader_parameter/specular_size = 48.0
 shader_parameter/specular_smoothness = 0.08
@@ -95,7 +97,7 @@ environment = SubResource("Environment_main")
 compositor = SubResource("Compositor_main")
 
 [node name="Sun" type="DirectionalLight3D" parent="." unique_id=325026453]
-transform = Transform3D(0.7660444, -0.49240386, 0.4131766, 0, 0.6427876, 0.7660444, -0.6427876, -0.5868241, 0.49240386, 4, 8, 3)
+transform = Transform3D(0.76604456, -0.49240398, 0.41317594, 0.3544243, 0.8598124, 0.367568, -0.53624564, -0.1351338, 0.8331744, 4, 4.354252, 4.956897)
 light_color = Color(1, 0.97, 0.92, 1)
 light_energy = 0.3
 shadow_enabled = true

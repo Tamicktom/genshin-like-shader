@@ -29,12 +29,13 @@ This is not a 1:1 recreation. Each phase should leave `scenes/main.tscn` runnabl
 
 | Goal | Current | Phase |
 | --- | --- | --- |
-| Painted two-band terminator | Single `smoothstep` | 1–2 |
-| Stable cheek shadow | NdotL on face normals | 5 |
-| Sweeping metal band | Round Blinn-Phong blob | 4 |
-| Saturated cartoon grade | Filmic/ACES + glow | 3 |
-| Inner + outer ink, white anime rim | Hull + Fresnel | 7 |
-| Painted hair streak | Kajiya-Kay lobes | 6 |
+| Painted two-band terminator | Outer shadow on hair/cloth + wrap/`lit_color` | 1–2 ✅ |
+| Stable cheek shadow | Painted R/G SDF + head axes | 5 ✅ |
+| Sweeping metal band | Path ready; Raiden metal stays Phong | 4 ✅ |
+| Saturated cartoon grade | Filmic + sat `1.1`, glow off | 3 ✅ |
+| Inner + outer ink, white anime rim | Depth Sobel compositor (default on) + hull | 7 ✅ |
+| Painted hair streak | Albedo-extracted mask + Kajiya-Kay fallback | 6 ✅ |
+| Terminator dither | Bayer on shade (hair/cloth) | 8 ✅ |
 
 Visual-impact order in the comparison put **face** first. Implementation order below puts **no-art lighting** first so each F5 still teaches something, then face once the extra-map seam exists.
 
@@ -59,11 +60,13 @@ Visual-impact order in the comparison put **face** first. Implementation order b
 
 ---
 
-## Phase 1 — Outer shadow band
+## Phase 1 — Outer shadow band ✅
 
 **Why:** largest cheap win. Genshin’s terminator is two stacked NdotL cuts, not one soft step. No new art.
 
 **Done when:** hair and cloth show a thin second band inside the main shadow on the turntable. Face/weapon unchanged. `outer_shadow_strength = 0` on a preset matches today’s look.
+
+**Result:** `OuterShadow*` on `ToonPreset` + shader; hair `0.85` / cloth `0.75`; face/metal/weapon at `0`.
 
 ### Steps
 
@@ -80,11 +83,13 @@ Visual-impact order in the comparison put **face** first. Implementation order b
 
 ---
 
-## Phase 2 — Cel lighting closer to Genshin
+## Phase 2 — Cel lighting closer to Genshin ✅
 
 **Why:** we wrap with Half-Lambert and only tint the shadow. Genshin uses a harder NdotL cut and tints both bands (`lerp(shadow, litColor, shade)`).
 
 **Done when:** there is a wrap slider and a lit tint. Defaults still match today. Hair/cloth can opt into a harder cut without retouching the face yet.
+
+**Result:** `light_wrap` + `lit_color` + optional `use_one_sided_step`. Hair wrap `0.2` / cloth `0.3` + slight cloth `LitColor` tint. Face stays wrap `0.5`. One-sided step unused on Raiden.
 
 ### Steps
 
@@ -198,11 +203,13 @@ Packed metal masks (often a channel on a lightmap) wait until those textures exi
 
 ---
 
-## Phase 8 — Dither and finish
+## Phase 8 — Dither and finish ✅
 
 **Why:** dither only pays off after bands are harder (Phases 1–2). Doing it earlier fights the current wide `smoothstep`.
 
 **Done when:** large shadow flats do not show 8-bit banding in a still, and the demo still reads as poster color rather than noise.
+
+**Result:** Ordered Bayer 4×4 on `shade` in `genshin_toon.gdshader` (not the compositor), gated with `4 * shade * (1 - shade)`. Hair/cloth `DitherStrength = 0.03`; face/metal/weapon at `0`. Compositor outline default-on. Raiden metal/weapon stay Phong. Sweep: `--dither-ab` → `screenshots/dither_*.png`. Docs/README/comparison refreshed to the new baseline.
 
 ### Steps
 
@@ -249,7 +256,8 @@ Each line should be its own commit (working demo after each):
 - **Phase 4 metal = half-vector `GradientTexture1D`.** Shader path + shared ramp exist; Raiden metal preset keeps the flag off (Phong). Weapon stays Phong. Metal slot before Hair so Hair_Accs is metal, not Kajiya-Kay.
 - **Phase 5 face = painted R/G SDF + head XZ axes.** No official lightmap in GLB; `looks/raiden_face_shadow.png` + `HeadAxes` Marker3D (no skeleton). Missing map → NdotL. Phase 0 extra-map seam landed with this phase.
 - **Phase 6 hair = albedo-extracted greyscale streak + Fresnel suppress.** `looks/raiden_hair_highlight.png` from purple-island luma of `gltf_embedded_1`; `HairHighlightTex` on Hair slot. Mix with Kajiya-Kay via `HairHighlightBlend`; additive rim gated when mask is on. Missing map → Kajiya-Kay.
-- **Phase 7 outline = resolved-depth Sobel compositor + hull fallback.** `NeedsNormalRoughness` breaks custom `light()`; do not write fragment `DEPTH` (breaks MSAA). Cloth/hair Fresnel rim zeroed; hull kept for purple-tinted lines.
+- **Phase 7 outline = resolved-depth Sobel compositor + hull fallback.** `NeedsNormalRoughness` breaks custom `light()`; do not write fragment `DEPTH` (breaks MSAA). Cloth/hair Fresnel rim zeroed; hull kept for purple-tinted lines. Compositor default-on after Phase 8.
+- **Phase 8 dither = Bayer in the toon shader, not the compositor.** Terminator-gated on `shade`; hair/cloth `0.03`; face/metal/weapon off. Raiden metal stays Phong (ramp ready). Residual Fresnel `0.08` on face/metal/weapon kept as local sheen beside the Sobel highlight.
 
 ---
 

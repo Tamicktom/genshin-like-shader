@@ -36,6 +36,10 @@ public static class ShaderParams
 	public const string OuterShadowSmoothness = "outer_shadow_smoothness";
 	public const string OuterShadowStrength = "outer_shadow_strength";
 
+	//* Terminator dither (Bayer; strength 0 = off)
+	public const string DitherStrength = "dither_strength";
+	public const string DitherScale = "dither_scale";
+
 	//* Specular
 	public const string SpecularColor = "specular_color";
 	public const string SpecularSize = "specular_size";

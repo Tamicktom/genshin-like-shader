@@ -33,3 +33,5 @@ HairHighlightFresnel = 5.0
 RimColor = Color(0.55, 0.5, 0.82, 1)
 RimPower = 5.0
 RimStrength = 0.0
+DitherStrength = 0.03
+DitherScale = 1.0

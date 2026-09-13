@@ -12,7 +12,8 @@ using Godot;
 /// User args: <c>--grade-ab</c> cycles tonemap modes; <c>--fog-ab</c> cycles fog densities;
 /// <c>--face-ab</c> toggles face-shadow map vs NdotL;
 /// <c>--hair-ab</c> toggles hair highlight mask vs Kajiya-Kay;
-/// <c>--outline-ab</c> cycles compositor outline debug / final modes.
+/// <c>--outline-ab</c> cycles compositor outline debug / final modes;
+/// <c>--dither-ab</c> toggles terminator Bayer dither off vs on (hair/cloth).
 /// </summary>
 public partial class CaptureSceneScreenshot : Node
 {
@@ -50,6 +51,7 @@ public partial class CaptureSceneScreenshot : Node
 		FaceAb,
 		HairAb,
 		OutlineAb,
+		DitherAb,
 	}
 
 	private SweepKind _sweep;
@@ -57,6 +59,8 @@ public partial class CaptureSceneScreenshot : Node
 	private List<EnvShot> _shots;
 	private List<FlagShot> _flagShots;
 	private List<OutlineShot> _outlineShots;
+	private List<DitherShot> _ditherShots;
+	private List<(ShaderMaterial Material, float SavedStrength)> _ditherTargets;
 	private int _shotIndex;
 	private float _savedSaturation = 1.1f;
 	private float _savedFogDensity = 0.0012f;
@@ -126,6 +130,18 @@ public partial class CaptureSceneScreenshot : Node
 		public float HighlightStrength { get; }
 	}
 
+	private readonly struct DitherShot
+	{
+		public DitherShot(string fileName, bool enabled)
+		{
+			FileName = fileName;
+			Enabled = enabled;
+		}
+
+		public string FileName { get; }
+		public bool Enabled { get; }
+	}
+
 	public override void _Ready()
 	{
 		if (!Enabled)
@@ -171,6 +187,13 @@ public partial class CaptureSceneScreenshot : Node
 			_shotIndex = 0;
 			_shotApplied = false;
 		}
+		else if (HasUserArg("--dither-ab"))
+		{
+			_sweep = SweepKind.DitherAb;
+			_ditherShots = BuildDitherShots();
+			_shotIndex = 0;
+			_shotApplied = false;
+		}
 		else
 		{
 			_sweep = SweepKind.None;
@@ -195,6 +218,12 @@ public partial class CaptureSceneScreenshot : Node
 		if (_sweep == SweepKind.OutlineAb)
 		{
 			ProcessOutlineSweep();
+			return;
+		}
+
+		if (_sweep == SweepKind.DitherAb)
+		{
+			ProcessDitherSweep();
 			return;
 		}
 
@@ -544,6 +573,159 @@ public partial class CaptureSceneScreenshot : Node
 				ToonOutlineCompositorEffect.OutlineDebugMode.Final,
 				0.01f),
 		};
+	}
+
+	private static List<DitherShot> BuildDitherShots()
+	{
+		return new List<DitherShot>
+		{
+			new("dither_off.png", false),
+			new("dither_on.png", true),
+		};
+	}
+
+	private void ProcessDitherSweep()
+	{
+		if (_ditherShots == null || _shotIndex >= _ditherShots.Count)
+		{
+			RestoreDitherStrengths();
+			RestoreSpin();
+			SetProcess(false);
+			GetTree().Quit();
+			return;
+		}
+
+		if (!IsSceneReady())
+		{
+			return;
+		}
+
+		if (_ditherTargets == null)
+		{
+			Node required = GetNodeOrNull(RequiredNodePath);
+			_ditherTargets = CollectDitherTargets(required);
+			if (_ditherTargets.Count == 0)
+			{
+				GD.PushError("capture_scene_screenshot: dither-ab found no materials with dither_strength > 0");
+				SetProcess(false);
+				GetTree().Quit();
+				return;
+			}
+
+			FreezeSpin(required);
+		}
+
+		if (!_shotApplied)
+		{
+			ApplyDitherShot(_ditherShots[_shotIndex]);
+			_shotApplied = true;
+			_waitingForSettle = true;
+			_settleCount = 0;
+			return;
+		}
+
+		_settleCount++;
+		if (_settleCount < SettleFrames)
+		{
+			return;
+		}
+
+		DitherShot done = _ditherShots[_shotIndex];
+		CaptureOnce(done.FileName);
+		GD.Print($"capture_scene_screenshot: dither-ab {_shotIndex + 1}/{_ditherShots.Count} -> {done.FileName}");
+
+		_shotIndex++;
+		_shotApplied = false;
+		_waitingForSettle = false;
+		_settleCount = 0;
+
+		if (_shotIndex >= _ditherShots.Count)
+		{
+			RestoreDitherStrengths();
+			RestoreSpin();
+			SetProcess(false);
+			GetTree().Quit();
+		}
+	}
+
+	private void ApplyDitherShot(DitherShot shot)
+	{
+		foreach ((ShaderMaterial material, float savedStrength) in _ditherTargets)
+		{
+			if (material == null || !GodotObject.IsInstanceValid(material))
+			{
+				continue;
+			}
+
+			material.SetShaderParameter(
+				ShaderParams.DitherStrength,
+				shot.Enabled ? savedStrength : 0.0f);
+		}
+	}
+
+	private void RestoreDitherStrengths()
+	{
+		if (_ditherTargets == null)
+		{
+			return;
+		}
+
+		foreach ((ShaderMaterial material, float savedStrength) in _ditherTargets)
+		{
+			if (material == null || !GodotObject.IsInstanceValid(material))
+			{
+				continue;
+			}
+
+			material.SetShaderParameter(ShaderParams.DitherStrength, savedStrength);
+		}
+	}
+
+	private static List<(ShaderMaterial Material, float SavedStrength)> CollectDitherTargets(Node root)
+	{
+		var result = new List<(ShaderMaterial, float)>();
+		if (root == null)
+		{
+			return result;
+		}
+
+		CollectDitherTargetsRecursive(root, result);
+		return result;
+	}
+
+	private static void CollectDitherTargetsRecursive(
+		Node node,
+		List<(ShaderMaterial Material, float SavedStrength)> result)
+	{
+		if (node is MeshInstance3D meshInstance && meshInstance.Mesh != null)
+		{
+			int surfaces = meshInstance.Mesh.GetSurfaceCount();
+			for (int i = 0; i < surfaces; i++)
+			{
+				Material mat = meshInstance.GetActiveMaterial(i);
+				if (mat is not ShaderMaterial shaderMaterial)
+				{
+					continue;
+				}
+
+				Variant strengthVar = shaderMaterial.GetShaderParameter(ShaderParams.DitherStrength);
+				if (strengthVar.VariantType != Variant.Type.Float && strengthVar.VariantType != Variant.Type.Int)
+				{
+					continue;
+				}
+
+				float strength = strengthVar.AsSingle();
+				if (strength > 0.0001f)
+				{
+					result.Add((shaderMaterial, strength));
+				}
+			}
+		}
+
+		foreach (Node child in node.GetChildren())
+		{
+			CollectDitherTargetsRecursive(child, result);
+		}
 	}
 
 	private void ProcessOutlineSweep()

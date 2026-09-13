@@ -98,11 +98,12 @@ Spatial shader, opaque depth write. Rasterizer is `cull_disabled`; solid parts s
 
 **Light**
 
-- Half-Lambert term, then a soft step (`shadow_threshold` / `shadow_smoothness`) for a two-tone cel band.
-- Shadow side is tinted with `shadow_color` (cool purple bias by default).
+- Wrap factor (`light_wrap`: `0` = raw NdotL, `0.5` = Half-Lambert) then a soft step (`shadow_threshold` / `shadow_smoothness`) for a two-tone cel band.
+- Both bands tint via `mix(shadow_color, lit_color, shade)`; optional outer shadow band inside the main terminator.
+- Optional ordered Bayer dither on `shade` across the terminator only (`dither_strength`; hair/cloth on, face/metal/weapon off).
 - Cast shadows from the light’s shadow map are remapped through `cast_shadow_softness` into the same cel tint (not multiplied to black).
 - Hair can use a painted highlight mask (`HairHighlightTex`) gated by shade with Fresnel suppress; Kajiya-Kay remains the fallback when no mask is bound.
-- Light-side rim, gated by the cel shade.
+- Light-side rim, gated by the cel shade (cloth/hair rim zeroed so the compositor edge highlight owns the anime rim).
 
 Important: the material stays in the **opaque** pipeline. Assigning `ALPHA` would push meshes into transparency sorting and can make the character look “see-through”.
 
@@ -161,7 +162,10 @@ Shared presets live under `materials/presets/` (`face`, `hair`, `cloth`, `metal`
 
 **On ToonPreset / toon shader**
 
-- `ShadowThreshold` / `ShadowSmoothness` / `ShadowColor` (shader uniforms stay snake_case)
+- `ShadowThreshold` / `ShadowSmoothness` / `ShadowColor` / `LitColor` (shader uniforms stay snake_case)
+- `LightWrap` — `0` raw NdotL, `0.5` Half-Lambert
+- `OuterShadowStrength` / offset / smoothness / color — second terminator band
+- `DitherStrength` / `DitherScale` — ordered Bayer on the terminator only
 - `CastShadowSoftness` — how the shadow map blends into the cel band
 - `LightIntensity` / `AmbientStrength`
 - `RimStrength` / `SpecularStrength`
@@ -197,5 +201,7 @@ The demo camera listens to viewport `SizeChanged` and reframes the character.
 - Opt-in by design: you choose which roots get the applicator + which look resource.
 - Matching is still name/path based in the look table — the heuristics moved out of code into data.
 - Very thin lace/alpha hair may need a dedicated cutout pass later; cutout is currently disabled globally to protect depth.
-- Hull outline is per-mesh; the compositor adds screen-space depth edges (silhouette + occlusions). Hair/cloth/metal keep the hull for purple-tinted lines.
+- Hull outline is per-mesh; the compositor (default on) adds screen-space depth edges (silhouette + occlusions). Hair/cloth/metal keep the hull for purple-tinted lines.
 - Face and weapon skip the hull. Do not write `DEPTH` from `genshin_toon.gdshader` — a fragment depth write disables MSAA coverage and stipples the whole character.
+- Terminator dither is ordered Bayer on `shade` only (hair/cloth). It does not touch albedo. Face/metal/weapon stay at strength `0`.
+- Metallic half-vector ramp exists under `materials/textures/`; Raiden’s metal/weapon presets keep Phong (`UseMetallicGradient` off).

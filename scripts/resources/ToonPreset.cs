@@ -67,6 +67,19 @@ public partial class ToonPreset : Resource
 	[Export(PropertyHint.Range, "0.0,1.0")]
 	public float OuterShadowStrength { get; set; }
 
+	[ExportGroup("Dither")]
+	/// <summary>
+	/// Ordered Bayer amplitude on the cel terminator only. 0 = off (today's look).
+	/// </summary>
+	[Export(PropertyHint.Range, "0.0,0.08")]
+	public float DitherStrength { get; set; }
+
+	/// <summary>
+	/// Pixel scale of the Bayer matrix (1 = one cell per screen pixel).
+	/// </summary>
+	[Export(PropertyHint.Range, "0.25,4.0")]
+	public float DitherScale { get; set; } = 1.0f;
+
 	[ExportGroup("Specular")]
 	[Export]
 	public Color SpecularColor { get; set; } = new Color(1.0f, 0.96f, 0.92f, 1.0f);
@@ -152,6 +165,9 @@ public partial class ToonPreset : Resource
 		material.SetShaderParameter(ShaderParams.OuterShadowOffset, OuterShadowOffset);
 		material.SetShaderParameter(ShaderParams.OuterShadowSmoothness, OuterShadowSmoothness);
 		material.SetShaderParameter(ShaderParams.OuterShadowStrength, OuterShadowStrength);
+
+		material.SetShaderParameter(ShaderParams.DitherStrength, DitherStrength);
+		material.SetShaderParameter(ShaderParams.DitherScale, DitherScale);
 
 		material.SetShaderParameter(ShaderParams.SpecularColor, SpecularColor);
 		material.SetShaderParameter(ShaderParams.SpecularSize, SpecularSize);

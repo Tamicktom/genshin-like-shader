@@ -77,7 +77,7 @@ public partial class ToonOutlineCompositorEffect : CompositorEffect
 		AccessResolvedColor = true;
 		AccessResolvedDepth = true;
 		NeedsNormalRoughness = false;
-		Enabled = false;
+		Enabled = true;
 	}
 
 	public override void _Notification(int what)
