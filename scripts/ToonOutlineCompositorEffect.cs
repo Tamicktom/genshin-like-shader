@@ -8,6 +8,7 @@ using Godot.Collections;
 /// <summary>
 /// Forward+ compositor pass: reverse-Z depth Sobel dark outline + optional
 /// far-side white edge highlight. Hull next-pass stays for albedo-tinted lines.
+/// Optional character mask gates both dark outline and highlight.
 /// </summary>
 /// <remarks>
 /// <see cref="CompositorEffect.NeedsNormalRoughness"/> stays off — enabling it
@@ -25,6 +26,7 @@ public partial class ToonOutlineCompositorEffect : CompositorEffect
 		NormalEdges = 2, // unused (NR disabled); kept for sweep enum stability
 		DepthEdges = 3,
 		Combined = 4,
+		CharacterMask = 5,
 	}
 
 	[ExportGroup("Detection")]
@@ -52,10 +54,25 @@ public partial class ToonOutlineCompositorEffect : CompositorEffect
 	public Color HighlightColor { get; set; } = new Color(1.0f, 1.0f, 1.0f, 1.0f);
 
 	[Export(PropertyHint.Range, "0.0,1.0")]
-	public float HighlightStrength { get; set; } = 0.01f;
+	public float HighlightStrength { get; set; } = 0.12f;
 
 	[Export(PropertyHint.Range, "0.0,8.0")]
 	public float HighlightYOffset { get; set; } = 1.0f;
+
+	[ExportGroup("Character Mask")]
+	/// <summary>
+	/// When true and a mask Rid is available, gate outline/highlight by the
+	/// character coverage texture from CharacterMaskPass.
+	/// </summary>
+	[Export]
+	public bool UseCharacterMask { get; set; } = true;
+
+	/// <summary>
+	/// Outline strength multiplier for pixels outside the character mask
+	/// (0 = no environment edges, 1 = full scene outline).
+	/// </summary>
+	[Export(PropertyHint.Range, "0.0,1.0")]
+	public float EnvironmentOutlineStrength { get; set; }
 
 	[ExportGroup("Debug")]
 	[Export]
@@ -65,8 +82,12 @@ public partial class ToonOutlineCompositorEffect : CompositorEffect
 	private Rid _shader;
 	private Rid _pipeline;
 	private Rid _nearestSampler;
+	private Rid _linearSampler;
 	private Rid _depthView;
 	private Rid _depthViewSource;
+	private Rid _characterMaskRd;
+	private ViewportTexture _characterMaskViewportTexture;
+	private Rid _fallbackMaskTexture;
 	private bool _shaderFailed;
 	private bool _loggedDepthFormat;
 	private float _zNear = 0.05f;
@@ -78,6 +99,15 @@ public partial class ToonOutlineCompositorEffect : CompositorEffect
 		AccessResolvedDepth = true;
 		NeedsNormalRoughness = false;
 		Enabled = true;
+	}
+
+	/// <summary>
+	/// Called each frame by CharacterMaskPass with the SubViewport RD texture.
+	/// </summary>
+	public void SetCharacterMaskTexture(Rid maskRd, ViewportTexture viewportTexture)
+	{
+		_characterMaskRd = maskRd;
+		_characterMaskViewportTexture = viewportTexture;
 	}
 
 	public override void _Notification(int what)
@@ -137,7 +167,8 @@ public partial class ToonOutlineCompositorEffect : CompositorEffect
 			_zNear = 0.05f;
 		}
 
-		byte[] pushConstants = BuildPushConstants(size);
+		bool maskActive = UseCharacterMask && _characterMaskRd.IsValid;
+		byte[] pushConstants = BuildPushConstants(size, maskActive);
 		uint viewCount = sceneBuffers.GetViewCount();
 
 		for (uint view = 0; view < viewCount; view++)
@@ -179,7 +210,22 @@ public partial class ToonOutlineCompositorEffect : CompositorEffect
 			Rid colorSet = UniformSetCacheRD.GetCache(_shader, 0, new Array<RDUniform> { colorUniform });
 			Rid depthSet = UniformSetCacheRD.GetCache(_shader, 1, new Array<RDUniform> { depthUniform });
 
-			if (!colorSet.IsValid || !depthSet.IsValid)
+			Rid maskSample = maskActive ? _characterMaskRd : EnsureFallbackMaskTexture();
+			if (!maskSample.IsValid)
+			{
+				continue;
+			}
+
+			var maskUniform = new RDUniform
+			{
+				UniformType = RenderingDevice.UniformType.SamplerWithTexture,
+				Binding = 0,
+			};
+			maskUniform.AddId(_linearSampler);
+			maskUniform.AddId(maskSample);
+			Rid maskSet = UniformSetCacheRD.GetCache(_shader, 2, new Array<RDUniform> { maskUniform });
+
+			if (!colorSet.IsValid || !depthSet.IsValid || !maskSet.IsValid)
 			{
 				continue;
 			}
@@ -188,10 +234,42 @@ public partial class ToonOutlineCompositorEffect : CompositorEffect
 			_rd.ComputeListBindComputePipeline(computeList, _pipeline);
 			_rd.ComputeListBindUniformSet(computeList, colorSet, 0);
 			_rd.ComputeListBindUniformSet(computeList, depthSet, 1);
+			_rd.ComputeListBindUniformSet(computeList, maskSet, 2);
 			_rd.ComputeListSetPushConstant(computeList, pushConstants, (uint)pushConstants.Length);
 			_rd.ComputeListDispatch(computeList, xGroups, yGroups, 1);
 			_rd.ComputeListEnd();
 		}
+	}
+
+	private Rid EnsureFallbackMaskTexture()
+	{
+		if (_fallbackMaskTexture.IsValid)
+		{
+			return _fallbackMaskTexture;
+		}
+
+		if (_rd == null)
+		{
+			return default;
+		}
+
+		// 1x1 opaque white so character_mask() returns 1 when masking is off.
+		var format = new RDTextureFormat
+		{
+			Format = RenderingDevice.DataFormat.R8G8B8A8Unorm,
+			Width = 1,
+			Height = 1,
+			Depth = 1,
+			ArrayLayers = 1,
+			Mipmaps = 1,
+			TextureType = RenderingDevice.TextureType.Type2D,
+			UsageBits = RenderingDevice.TextureUsageBits.SamplingBit
+				| RenderingDevice.TextureUsageBits.CanUpdateBit,
+		};
+		var view = new RDTextureView();
+		byte[] white = { 255, 255, 255, 255 };
+		_fallbackMaskTexture = _rd.TextureCreate(format, view, new Array<byte[]> { white });
+		return _fallbackMaskTexture;
 	}
 
 	private Rid EnsureDepthSampleView(Rid depthTex)
@@ -254,6 +332,19 @@ public partial class ToonOutlineCompositorEffect : CompositorEffect
 			_nearestSampler = _rd.SamplerCreate(samplerState);
 		}
 
+		if (!_linearSampler.IsValid)
+		{
+			var samplerState = new RDSamplerState
+			{
+				MinFilter = RenderingDevice.SamplerFilter.Linear,
+				MagFilter = RenderingDevice.SamplerFilter.Linear,
+				RepeatU = RenderingDevice.SamplerRepeatMode.ClampToEdge,
+				RepeatV = RenderingDevice.SamplerRepeatMode.ClampToEdge,
+				RepeatW = RenderingDevice.SamplerRepeatMode.ClampToEdge,
+			};
+			_linearSampler = _rd.SamplerCreate(samplerState);
+		}
+
 		string code = FileAccess.GetFileAsString("res://shaders/toon_outline.glsl");
 		if (string.IsNullOrEmpty(code))
 		{
@@ -296,7 +387,7 @@ public partial class ToonOutlineCompositorEffect : CompositorEffect
 		return true;
 	}
 
-	private byte[] BuildPushConstants(Vector2I size)
+	private byte[] BuildPushConstants(Vector2I size, bool maskActive)
 	{
 		var floats = new float[20];
 		int i = 0;
@@ -306,7 +397,8 @@ public partial class ToonOutlineCompositorEffect : CompositorEffect
 		floats[i++] = Thickness;
 		floats[i++] = DepthThreshold;
 
-		floats[i++] = NormalThreshold;
+		// Reuse former NormalThreshold slot for environment outline strength.
+		floats[i++] = EnvironmentOutlineStrength;
 		floats[i++] = OutlineStrength;
 		floats[i++] = HighlightStrength;
 		floats[i++] = HighlightYOffset;
@@ -323,7 +415,7 @@ public partial class ToonOutlineCompositorEffect : CompositorEffect
 
 		floats[i++] = _zNear;
 		floats[i++] = (float)DebugMode;
-		floats[i++] = 0.0f;
+		floats[i++] = maskActive ? 1.0f : 0.0f;
 		floats[i++] = 0.0f;
 
 		var bytes = new byte[floats.Length * sizeof(float)];
@@ -340,6 +432,8 @@ public partial class ToonOutlineCompositorEffect : CompositorEffect
 
 		_depthView = default;
 		_depthViewSource = default;
+		_characterMaskRd = default;
+		_characterMaskViewportTexture = null;
 
 		if (_shader.IsValid)
 		{
@@ -352,6 +446,18 @@ public partial class ToonOutlineCompositorEffect : CompositorEffect
 		{
 			_rd.FreeRid(_nearestSampler);
 			_nearestSampler = default;
+		}
+
+		if (_linearSampler.IsValid)
+		{
+			_rd.FreeRid(_linearSampler);
+			_linearSampler = default;
+		}
+
+		if (_fallbackMaskTexture.IsValid)
+		{
+			_rd.FreeRid(_fallbackMaskTexture);
+			_fallbackMaskTexture = default;
 		}
 	}
 }

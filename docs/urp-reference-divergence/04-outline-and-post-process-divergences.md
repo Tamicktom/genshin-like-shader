@@ -107,21 +107,11 @@ For the broader target, stable material-family colors are reasonable. A dedicate
 
 ## 5. The compositor outlines the whole scene
 
-Classification: **confirmed active divergence**
+Classification: **resolved (P1.3)**
 
-[`toon_outline.glsl`, lines 40–66](../../shaders/toon_outline.glsl) computes a depth Sobel from the resolved scene depth. There is no object ID, render layer, stencil, or character mask.
+[`CharacterMaskPass`](../../scripts/CharacterMaskPass.cs) renders a half-resolution SubViewport of meshes on the character mask layer. [`toon_outline.glsl`](../../shaders/toon_outline.glsl) gates both dark outline and far-side highlight by that coverage. `EnvironmentOutlineStrength` (default `0`) controls residual scene edges. Face slots set `IncludeInOutlineMask = false` so internal face edges stay quiet without writing fragment `DEPTH`.
 
-Consequences:
-
-- the ground/background horizon receives a dark line;
-- unrelated props and environment occlusions are outlined;
-- the effect cannot use different thresholds for face, hair, body, and environment;
-- face-outline suppression cannot be targeted;
-- UI or transparent ordering may be affected by the `PostTransparent` callback depending on scene composition.
-
-The current `scene_loaded.png` and dither A/B captures visibly show a line along the ground horizon. That line comes from scene depth, not the character style.
-
-Recommendation: render or derive a character mask and multiply both dark-outline and highlight masks by it. If the desired game style includes environment outlines, use a separate weaker environment profile.
+Validate with `$GODOT --path . -- --outline-ab` (`outline/mask.png`, `outline/comp_masked.png` vs `outline/comp_unmasked.png`).
 
 ## 6. The compositor lacks normal edges
 
@@ -149,27 +139,15 @@ Option 3 is the lowest-risk current architecture.
 
 ## 7. Hull and Sobel can double the same edge
 
-Classification: **active divergence**
+Classification: **resolved ownership split (P1.2)**
 
-Hair, cloth, metal, body, and fallback slots can receive the hull while the compositor processes their depth silhouettes again.
+Controlled modes live under `--outline-ab` (`outline/hull`, `outline/comp_masked`, `outline/combined`, close-ups). Default production uses:
 
-Typical result:
+- hull for locally colored silhouettes on hair/cloth/metal/body;
+- masked compositor for inter-mesh depth edges and the far-side highlight (`HighlightStrength = 0.12`);
+- face excluded from the mask instead of dead `outline_depth_flatten`.
 
-```text
-base silhouette
-  + outward albedo hull
-  + depth edge at base geometry
-  = two nearby dark bands
-```
-
-Depending on width and anti-aliasing, these bands merge into a line that is thicker or darker than intended. The issue varies by camera distance because the hull is pixel-sized but the Sobel threshold is relative depth with integer-rounded thickness.
-
-Recommendation:
-
-- use the hull for locally colored silhouette/material lines;
-- use the compositor only for missing inter-object depth edges and the far-side highlight;
-- suppress compositor darkening where the hull already covers the silhouette, or disable the hull on slots where the compositor is sufficient;
-- capture isolated hull-only, Sobel-only, and combined comparisons at identical framing.
+Combined mode is intentional when both systems add value; use the A/B captures to judge thickness before widening either path.
 
 ## 8. Face depth flattening is dead configuration
 
@@ -190,19 +168,9 @@ Do not re-enable a shared fragment-depth write. Prefer a character/face mask, a 
 
 ## 9. Highlight is too weak to establish the intended rim
 
-Classification: **inactive-in-practice feature**
+Classification: **resolved (tuned after mask)**
 
-The compositor computes a far-side depth highlight and offsets it vertically, matching the broader anime edge-highlight concept. The active resource relies on default `HighlightStrength = 0.01`.
-
-At one percent additive strength, it is unlikely to read as a deliberate white anime edge at normal viewing distance. Meanwhile hair and cloth rim strengths are zero, so neither system clearly owns a strong rim.
-
-Recommendation:
-
-- validate the mask in a debug output at strength 1;
-- verify side selection under reverse Z;
-- tune width, Y offset, and final strength at gameplay distance;
-- apply the character mask before increasing strength;
-- avoid reintroducing a generic Fresnel rim as a substitute.
+`HighlightStrength` defaults to `0.12` on [`toon_outline_effect.tres`](../../materials/compositor/toon_outline_effect.tres). Validate with `outline/highlight.png` under the character mask so environment pixels do not bloom.
 
 ## 10. Thickness is quantized
 

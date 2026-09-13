@@ -29,3 +29,4 @@ MetallicStrength = 1.0
 RimColor = Color(0.7, 0.78, 1, 1)
 RimPower = 4.0
 RimStrength = 0.08
+AmbientMaxBlend = 1.0

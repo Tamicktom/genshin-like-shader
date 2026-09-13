@@ -35,6 +35,14 @@ public partial class LookSlot : Resource
 	[Export]
 	public bool EnableOutline { get; set; } = true;
 
+	/// <summary>
+	/// When true, mesh surfaces matching this slot are placed on the character
+	/// outline-mask render layer (see ApplyCharacterLook.CharacterMaskLayer).
+	/// Face typically leaves this false so the compositor skips internal face edges.
+	/// </summary>
+	[Export]
+	public bool IncludeInOutlineMask { get; set; } = true;
+
 	[Export(PropertyHint.Range, "0.0,12.0")]
 	public float OutlineWidth { get; set; } = 1.25f;
 
@@ -64,6 +72,25 @@ public partial class LookSlot : Resource
 	/// </summary>
 	[Export(PropertyHint.Range, "0.0,1.0")]
 	public float FaceMirrorAxis { get; set; } = 0.5f;
+
+	/// <summary>
+	/// Extra yaw (degrees) applied to the light XZ projection before face-map
+	/// comparison. Positive rotates the light around world Y.
+	/// </summary>
+	[Export(PropertyHint.Range, "-180.0,180.0")]
+	public float FaceYawOffsetDegrees { get; set; }
+
+	/// <summary>
+	/// When true, negate head forward for the face angular threshold.
+	/// </summary>
+	[Export]
+	public bool FaceForwardFlip { get; set; }
+
+	/// <summary>
+	/// When true, swap left/right light-side selection (mirrored UV).
+	/// </summary>
+	[Export]
+	public bool FaceSwapSides { get; set; }
 
 	/// <summary>
 	/// Packed control map (light/spec/metal masks). Unused until later phases.

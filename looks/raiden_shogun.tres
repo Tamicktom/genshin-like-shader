@@ -20,6 +20,7 @@ TexturePatterns = PackedStringArray("*2_0.png", "*gltf_embedded_0*")
 Preset = ExtResource("5_face")
 DoubleSided = true
 EnableOutline = false
+IncludeInOutlineMask = false
 FlattenOutlineDepth = true
 OutlineDepthFlatten = 0.85
 FaceShadowTex = ExtResource("10_faceshadow")
@@ -33,12 +34,23 @@ TexturePatterns = PackedStringArray("*2_5.png", "*gltf_embedded_5*")
 Preset = ExtResource("7_weapon")
 DoubleSided = true
 EnableOutline = false
+IncludeInOutlineMask = true
+
+[sub_resource type="Resource" id="slot_hair_acc"]
+script = ExtResource("2_slot")
+SlotName = "HairAccessory"
+NamePatterns = PackedStringArray("*hair_accs*")
+Preset = ExtResource("6_hair")
+DoubleSided = true
+HairHighlightTex = ExtResource("11_hairhl")
+IncludeInOutlineMask = true
 
 [sub_resource type="Resource" id="slot_metal"]
 script = ExtResource("2_slot")
 SlotName = "Metal"
-NamePatterns = PackedStringArray("*acc*")
+NamePatterns = PackedStringArray("*accs*", "*acc*")
 Preset = ExtResource("8_metal")
+IncludeInOutlineMask = true
 
 [sub_resource type="Resource" id="slot_hair"]
 script = ExtResource("2_slot")
@@ -48,6 +60,7 @@ TexturePatterns = PackedStringArray("*2_1.png", "*gltf_embedded_1*")
 Preset = ExtResource("6_hair")
 DoubleSided = true
 HairHighlightTex = ExtResource("11_hairhl")
+IncludeInOutlineMask = true
 
 [sub_resource type="Resource" id="slot_dress"]
 script = ExtResource("2_slot")
@@ -55,18 +68,21 @@ SlotName = "Dress"
 NamePatterns = PackedStringArray("*dress*")
 Preset = ExtResource("9_cloth")
 DoubleSided = true
+IncludeInOutlineMask = true
 
 [sub_resource type="Resource" id="slot_body"]
 script = ExtResource("2_slot")
 SlotName = "Body"
 NamePatterns = PackedStringArray("*body*")
+TexturePatterns = PackedStringArray("*2_2.png", "*gltf_embedded_2*", "*2_4.png", "*gltf_embedded_4*")
 Preset = ExtResource("9_cloth")
 OutlineDepthBias = 0.003
+IncludeInOutlineMask = true
 
 [resource]
 script = ExtResource("1_look")
 DisplayName = "Raiden Shogun"
 ToonShader = ExtResource("3_toon")
 OutlineShader = ExtResource("4_outline")
-Slots = Array[ExtResource("2_slot")]([SubResource("slot_face"), SubResource("slot_weapon"), SubResource("slot_metal"), SubResource("slot_hair"), SubResource("slot_dress"), SubResource("slot_body")])
+Slots = Array[ExtResource("2_slot")]([SubResource("slot_face"), SubResource("slot_weapon"), SubResource("slot_hair_acc"), SubResource("slot_metal"), SubResource("slot_hair"), SubResource("slot_dress"), SubResource("slot_body")])
 FallbackPreset = ExtResource("9_cloth")

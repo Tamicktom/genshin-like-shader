@@ -22,84 +22,29 @@ Permanent `debug_view` / `debug_slot_id` uniforms; `--debug-ab` and `--face-yaw`
 
 ## P1 — high visual impact
 
-### P1.1 Rebalance indirect and direct lighting
+### P1.1 Rebalance indirect and direct lighting — **done**
 
-After P0.1:
+`ambient_max_blend` approximates URP `max(indirect, direct)` under Godot’s additive `light()`. Validate with `--ambient-ab` and `tools/check_band_separation.py`.
 
-1. capture with ambient emission set to zero;
-2. restore only enough ambient to prevent crushed black regions;
-3. compare additive ambient with a URP-like indirect floor;
-4. retain one directional key during tuning.
+### P1.2 Separate outline ownership — **done**
 
-Preferred target:
+`--outline-ab` captures hull / compositor-masked / unmasked / combined / highlight (full body + close-up). Default: hull for colored silhouettes, masked compositor for depth edges + far-side highlight.
 
-- clear lit and shadow families;
-- cast shadows use the material's shadow tint;
-- ambient does not lift the shadow family toward the lit family;
-- white clothing retains color without clipping under the grade.
+### P1.3 Add a character mask to the compositor — **done**
 
-Do not add a fill light to repair a shader composition issue.
+`CharacterMaskPass` + `LookSlot.IncludeInOutlineMask` + GLSL mask gate. Face excluded from the mask. Environment strength default `0`.
 
-### P1.2 Separate outline ownership
+### P1.4 Isolate and enable metallic ramp — **deferred (Raiden off)**
 
-Create three controlled modes:
+Slot isolation and `--metal-ab` (Phong vs ramp × light yaw) are in place. Raiden’s metal preset keeps `UseMetallicGradient = false` after lookdev; weapon remains Phong. Re-enable when the band look is preferred.
 
-1. hull only;
-2. compositor only;
-3. combined.
+### P1.5 Improve face orientation controls — **done**
 
-Use them to assign responsibilities:
+`FaceYawOffsetDegrees`, `FaceForwardFlip`, `FaceSwapSides`, optional `HeadBoneName`. Dead `head_position` uniform removed. Validate with `--face-yaw`.
 
-- hull: locally colored outer silhouette;
-- compositor: selected inter-mesh depth edges and white far-side highlight;
-- face mask: suppress unwanted internal face edges.
+### P1.6 Resolve mixed mesh slot matching — **done**
 
-Acceptance criteria:
-
-- no ground-horizon line in character-only mode;
-- combined silhouette is not wider/darker merely because two systems overlap;
-- face and weapon behavior is deliberate rather than a side effect of disabling hull;
-- the far-side highlight is visible at gameplay distance.
-
-### P1.3 Add a character mask to the compositor
-
-Possible implementations:
-
-- dedicated render layer/mask viewport;
-- stencil or material ID if accessible in the selected Godot pipeline;
-- auxiliary low-cost character silhouette texture.
-
-The mask should gate both dark outline and white highlight. If environment lines are desired later, they should have separate settings.
-
-Risk: an extra pass has bandwidth and synchronization cost. Measure it at target resolution.
-
-### P1.4 Isolate and enable metallic ramp
-
-First ensure only true metal surfaces resolve to the metal slot. Then enable `UseMetallicGradient` and disable or reduce the competing Phong lobe.
-
-Acceptance criteria:
-
-- gold shows a moving colored band over a turntable;
-- the band does not appear on hair or cloth;
-- shadow-side gating remains deliberate after the P0 shade correction;
-- weapon can use a separate preset if its blade should not share ornament behavior.
-
-### P1.5 Improve face orientation controls
-
-Add per-character:
-
-- yaw offset;
-- optional forward flip;
-- optional channel swap;
-- a head-bone target for animated characters.
-
-Retain the current world-space axes design. Replace `head_position` unless a future effect actually needs it.
-
-### P1.6 Resolve mixed mesh slot matching
-
-Add an explicit slot for `Hair_Accs` after inspecting the surface. Longer term, prefer imported material metadata or explicit per-surface overrides over broad name wildcards.
-
-Acceptance criteria: a debug material-ID view proves every surface receives the intended preset and extra maps.
+`HairAccessory` slot before Metal; `LogSlotResolution` + `debug_view 7`. Body also matches `*2_4*` atlas.
 
 ## P2 — polish and robustness
 

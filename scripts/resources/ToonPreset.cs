@@ -51,6 +51,13 @@ public partial class ToonPreset : Resource
 	[Export]
 	public Color AmbientColor { get; set; } = new Color(0.78f, 0.8f, 0.9f, 1.0f);
 
+	/// <summary>
+	/// 0 = additive ambient emission. 1 = subtract ambient from direct so a
+	/// single key approximates albedo * max(indirect, direct).
+	/// </summary>
+	[Export(PropertyHint.Range, "0.0,1.0")]
+	public float AmbientMaxBlend { get; set; } = 1.0f;
+
 	[ExportGroup("Outer Shadow")]
 	[Export]
 	public Color OuterShadowColor { get; set; } = new Color(0.5f, 0.35f, 0.58f, 1.0f);
@@ -167,6 +174,7 @@ public partial class ToonPreset : Resource
 		material.SetShaderParameter(ShaderParams.LightIntensity, LightIntensity);
 		material.SetShaderParameter(ShaderParams.AmbientStrength, AmbientStrength);
 		material.SetShaderParameter(ShaderParams.AmbientColor, AmbientColor);
+		material.SetShaderParameter(ShaderParams.AmbientMaxBlend, AmbientMaxBlend);
 
 		material.SetShaderParameter(ShaderParams.OuterShadowColor, OuterShadowColor);
 		material.SetShaderParameter(ShaderParams.OuterShadowOffset, OuterShadowOffset);

@@ -21,50 +21,15 @@ Sources: [`CharacterLook.cs`](../../scripts/resources/CharacterLook.cs), [`LookS
 
 ## 2. `Hair_Accs` resolves to metal
 
-Classification: **confirmed binding defect**
+Classification: **resolved (P1.6)**
 
-Slot resolution is first-match-wins. The metal slot appears before hair and matches `*acc*`; the model contains a mesh named `Hair_Accs.002`.
+`looks/raiden_shogun.tres` now inserts a `HairAccessory` slot matching `*hair_accs*` before Metal. `Accs.002` remains Metal; `Hair_Accs.002` uses the hair preset and highlight map. Enable `LogSlotResolution` on `ApplyCharacterLook` or use `debug_view = 7` / `--debug-ab` to verify.
 
-As a result, that surface receives:
+## 3. Metallic gradient
 
-- metal preset instead of hair preset;
-- isotropic tight Phong instead of hair highlight behavior;
-- no hair highlight map;
-- no hair outer-shadow band;
-- no hair dither;
-- single-sided rendering unless otherwise overridden.
+Classification: **deferred (P1.4)** — harness ready, Raiden off
 
-The current README describes this order as intentional so hair accessories become metal. The mesh name, however, combines hair and accessories; name-only classification cannot determine whether every surface should be metal.
-
-Recommended correction:
-
-1. inspect the mesh surface visually and by texture islands;
-2. add a specific `Hair_Accs` slot before broad patterns;
-3. assign an explicit preset based on actual geometry;
-4. avoid relying on `*acc*` for mixed-content meshes.
-
-If the mesh truly is only ornaments, rename the slot and document that evidence. The current heuristic is fragile.
-
-## 3. Metallic gradient exists but is disabled
-
-Classification: **inactive high-impact feature**
-
-The metal preset assigns [`gold_metallic_gradient.tres`](../../materials/textures/gold_metallic_gradient.tres) but sets:
-
-```text
-UseMetallicGradient = false
-```
-
-`ToonPreset.ApplyToMaterial` therefore sets `use_metallic_gradient` to false. Raiden's metal continues through the isotropic half-vector power path.
-
-This explains a likely visual gap:
-
-- Phong produces a round, localized glint;
-- the Genshin-style ramp produces a broad, colored moving band;
-- merely having a ramp resource does not affect the demo.
-
-Before enabling it globally, ensure the metal slot contains only metal. Otherwise hair accessories or mixed meshes may receive a gold band.
-
+[`metal.tres`](../../materials/presets/metal.tres) keeps `UseMetallicGradient = false` with `gold_metallic_gradient.tres` assigned for opt-in. Weapon stays Phong. Compare with `$GODOT --path . -- --metal-ab` when revisiting the look.
 ## 4. Control and detail-normal maps are plumbing only
 
 Classification: **inactive configuration**
@@ -173,35 +138,31 @@ Recommendation: evaluate temporal footage, not still images alone. Sharp screens
 
 ## 9. Scene and documentation values drift
 
-Classification: **documentation defect**
+Classification: **resolved for outline scale / glow / exposure claims**
 
-Examples:
+Serialized truth in [`main.tscn`](../../scenes/main.tscn):
 
-- README says demo `OutlineWidthScale` is `2.0`; [`main.tscn`, line 127](../../scenes/main.tscn) serializes `1.8`.
-- Docs describe glow as explicitly false; the scene omits `glow_enabled`, relying on the engine default.
-- Docs describe exposure `1.0`; the scene omits an explicit exposure property.
-- Face flattening is set in the look resource even though code marks it unused.
-- Phase documentation says all phases are complete while metal ramp and several map paths remain inactive in the active Raiden look.
-
-These do not all change the image, but they make exact reproduction difficult. Serialized state should be treated as implementation truth.
+- `OutlineWidthScale = 1.8`
+- Filmic tonemap; exposure and glow left at engine defaults unless a sweep overrides them
+- Face flattening remains serialized but unused (MSAA); compositor mask replaces it for face-edge suppression
 
 ## 10. Existing feature-state matrix
 
 | Feature | Code path | Active on Raiden | Data quality |
 | --- | --- | --- | --- |
-| Standard cel | Yes | Yes | Base equation currently defective |
-| Face directional map | Yes | Face | Active R/G data effectively identical |
-| Hair mask highlight | Yes | Hair | Heuristic albedo extraction |
-| Kajiya-Kay | Yes | Replaced when hair mask blend = 1 | Fallback only |
-| Outer shadow | Yes | Hair and cloth | Depends on defective shade floor |
-| Dither | Yes | Hair and cloth | Depends on defective shade floor |
-| Metallic gradient | Yes | No | Ramp assigned, flag off |
+| Standard cel | Yes | Yes | Signed N·L + Half-Lambert wrap |
+| Face directional map | Yes | Face | Mirrored-UV single-channel |
+| Hair mask highlight | Yes | Hair / HairAccessory | Heuristic albedo extraction |
+| Kajiya-Kay | Yes | Fallback when mask blend < 1 | Fallback |
+| Outer shadow | Yes | Off pending retune | Strength 0 |
+| Dither | Yes | Off pending retune | Strength 0 |
+| Metallic gradient | Yes | No (Raiden) | Ramp assigned, flag off |
 | Control map | Declared/bound | No effective behavior | No contract |
 | Detail normal | Declared/bound | No effective behavior | No implementation |
-| Face depth flatten | Declared/bound | No effective behavior | Deliberately disabled |
-| Hull outline | Yes | Hair/cloth/metal/body/fallback | Combined with compositor |
+| Face depth flatten | Declared/bound | No effective behavior | Replaced by outline mask |
+| Hull outline | Yes | Hair/cloth/metal/body/fallback | Combined with masked compositor |
 | Normal-based post outline | No | No | Blocked by renderer issue |
-| Depth compositor | Yes | Whole scene | No character mask |
+| Depth compositor | Yes | Character-masked | CharacterMaskPass |
 
 ## 11. Recommended data validation
 

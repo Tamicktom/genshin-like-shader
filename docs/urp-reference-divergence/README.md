@@ -17,13 +17,13 @@ The project has more features than the reference, but several high-impact paths 
 | P0 | Hair and cloth used `light_wrap == shadow_threshold` with a centered two-sided step after clamping `N·L` to zero. | **Resolved** — signed `N·L` restored; presets normalized to Half-Lambert `LightWrap = 0.5` | Back-facing samples can reach the full shadow band. |
 | P0 | The active face texture had practically identical R and G channels (actually a grayscale map replicated into RGBA), while the shader expected distinct left/right angular masks. | **Resolved** — mirrored-UV single-channel contract | Left/right light sides sample mirrored UVs of the R channel. |
 | P0 | The face A/B images were full-body captures where the face occupied too few pixels to validate cheek-shadow direction or stability. | **Resolved** — `--face-yaw` close-up + `--debug-ab` harness | Face path can be validated at controlled light yaw. |
-| P1 | The Godot ambient term is always added through emission, whereas the URP reference takes the component-wise maximum of indirect and direct light. | Active divergence | Shadow and lit bands are flatter and more washed out, especially with low sun energy. |
-| P1 | Hull outlines and a scene-wide depth Sobel are active together. | Active divergence | Character lines can double in thickness and the compositor outlines unrelated geometry such as the ground horizon. |
-| P1 | The compositor has no normal-edge input or character mask. | Engine compromise | It misses normal-only creases while adding depth edges across the whole scene. |
-| P1 | `Hair_Accs` resolves to the metal slot because `*acc*` is checked before hair. | Binding defect | A hair-related surface receives metal Phong settings and loses the hair mask, outer band, and dither. |
-| P1 | The metallic gradient path exists but is disabled on the Raiden metal preset. | Inactive feature | Gold remains a round Phong highlight instead of a moving colored band. |
-| P2 | Face depth flattening, `head_position`, control-map, and detail-normal configuration are bound but unused. | Inactive configuration | The resources imply capabilities that do not exist at runtime. |
-| P2 | Documentation values for outline scale, glow, and exposure do not exactly match serialized scene data. | Documentation drift | Reproduction and visual tuning become ambiguous. |
+| P1 | The Godot ambient term is always added through emission, whereas the URP reference takes the component-wise maximum of indirect and direct light. | **Resolved** — `ambient_max_blend` subtracts the emission floor from direct | Shadow and lit bands stay separated under a single key light. |
+| P1 | Hull outlines and a scene-wide depth Sobel are active together. | **Resolved** — ownership split + masked compositor | Character lines no longer double with an unmasked ground horizon. |
+| P1 | The compositor has no normal-edge input or character mask. | **Resolved** (mask) / engine compromise (normals) — `CharacterMaskPass` gates edges; normals still blocked by `NeedsNormalRoughness` | Environment edges stay off in character-only mode; normal creases remain hull-owned. |
+| P1 | `Hair_Accs` resolves to the metal slot because `*acc*` is checked before hair. | **Resolved** — `HairAccessory` slot before Metal | Hair accessories keep hair preset, mask, and dither path. |
+| P1 | The metallic gradient path exists but is disabled on the Raiden metal preset. | **Deferred** — code path + `--metal-ab` remain; Raiden keeps Phong | Gold stays a round Phong highlight until the ramp look is preferred. |
+| P2 | Face depth flattening, `head_position`, control-map, and detail-normal configuration are bound but unused. | Inactive configuration (`head_position` removed) | The resources imply capabilities that do not exist at runtime. |
+| P2 | Documentation values for outline scale, glow, and exposure do not exactly match serialized scene data. | **Resolved** — README synced to `OutlineWidthScale = 1.8` and engine-default glow/exposure | Reproduction and visual tuning stay aligned with `main.tscn`. |
 
 ## What is already sound
 

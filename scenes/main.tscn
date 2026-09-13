@@ -5,6 +5,7 @@
 [ext_resource type="Shader" uid="uid://cpo7r0lrj0q6q" path="res://shaders/genshin_toon.gdshader" id="3_toon"]
 [ext_resource type="Script" uid="uid://bv03q3jg6kwbv" path="res://scripts/CaptureSceneScreenshot.cs" id="4_shot"]
 [ext_resource type="CompositorEffect" uid="uid://dg122mqh1si0n" path="res://materials/compositor/toon_outline_effect.tres" id="5_outline"]
+[ext_resource type="Script" path="res://scripts/CharacterMaskPass.cs" id="6_mask"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_top_color = Color(0.45, 0.58, 0.92, 1)
@@ -53,6 +54,7 @@ shader_parameter/cast_shadow_softness = 0.32
 shader_parameter/light_intensity = 0.62
 shader_parameter/ambient_strength = 0.3
 shader_parameter/ambient_color = Color(0.78, 0.8, 0.9, 1)
+shader_parameter/ambient_max_blend = 1.0
 shader_parameter/outer_shadow_color = Color(0.5, 0.35, 0.58, 1)
 shader_parameter/outer_shadow_offset = 0.06
 shader_parameter/outer_shadow_smoothness = 0.02
@@ -77,9 +79,11 @@ shader_parameter/rim_strength = 0.0
 shader_parameter/use_face_shadow = false
 shader_parameter/face_mirror_axis = 0.5
 shader_parameter/face_shadow_softness = 0.04
+shader_parameter/face_yaw_offset = 0.0
+shader_parameter/face_forward_sign = 1.0
+shader_parameter/face_side_sign = 1.0
 shader_parameter/head_forward = Vector3(0, 0, 1)
 shader_parameter/head_right = Vector3(1, 0, 0)
-shader_parameter/head_position = Vector3(0, 0, 0)
 shader_parameter/outline_depth_flatten = 0.0
 shader_parameter/use_control_tex = false
 shader_parameter/use_hair_highlight = false
@@ -129,3 +133,11 @@ mesh = SubResource("PlaneMesh_ground")
 [node name="RaidenShogun" parent="." unique_id=1110029233 instance=ExtResource("1_o5qli")]
 transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0.6036525, 0, 0.21492863)
 OutlineWidthScale = 1.8
+
+[node name="CharacterMaskPass" type="Node" parent="."]
+script = ExtResource("6_mask")
+SourceCameraPath = NodePath("../Camera3D")
+CharacterRootPath = NodePath("../RaidenShogun")
+MaskCullLayer = 2
+ResolutionScale = 0.5
+Enabled = true

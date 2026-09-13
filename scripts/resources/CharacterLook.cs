@@ -14,6 +14,7 @@ public readonly struct ResolvedLookSlot
 	public ToonPreset Preset { get; init; }
 	public bool DoubleSided { get; init; }
 	public bool EnableOutline { get; init; }
+	public bool IncludeInOutlineMask { get; init; }
 	public float OutlineWidth { get; init; }
 	public float OutlineDepthBias { get; init; }
 	public bool FlattenOutlineDepth { get; init; }
@@ -22,6 +23,9 @@ public readonly struct ResolvedLookSlot
 	public int SlotIndex { get; init; }
 	public Texture2D FaceShadowTex { get; init; }
 	public float FaceMirrorAxis { get; init; }
+	public float FaceYawOffsetDegrees { get; init; }
+	public bool FaceForwardFlip { get; init; }
+	public bool FaceSwapSides { get; init; }
 	public Texture2D ControlTex { get; init; }
 	public Texture2D HairHighlightTex { get; init; }
 	public Texture2D DetailNormalTex { get; init; }
@@ -104,6 +108,7 @@ public partial class CharacterLook : Resource
 					Preset = slot.Preset,
 					DoubleSided = slot.DoubleSided,
 					EnableOutline = slot.EnableOutline,
+					IncludeInOutlineMask = slot.IncludeInOutlineMask,
 					OutlineWidth = slot.OutlineWidth,
 					OutlineDepthBias = slot.OutlineDepthBias,
 					FlattenOutlineDepth = slot.FlattenOutlineDepth,
@@ -112,6 +117,9 @@ public partial class CharacterLook : Resource
 					SlotIndex = slotIndex,
 					FaceShadowTex = slot.FaceShadowTex,
 					FaceMirrorAxis = slot.FaceMirrorAxis,
+					FaceYawOffsetDegrees = slot.FaceYawOffsetDegrees,
+					FaceForwardFlip = slot.FaceForwardFlip,
+					FaceSwapSides = slot.FaceSwapSides,
 					ControlTex = slot.ControlTex,
 					HairHighlightTex = slot.HairHighlightTex,
 					DetailNormalTex = slot.DetailNormalTex,
@@ -124,6 +132,7 @@ public partial class CharacterLook : Resource
 			Preset = FallbackPreset,
 			DoubleSided = FallbackDoubleSided,
 			EnableOutline = FallbackEnableOutline,
+			IncludeInOutlineMask = true,
 			OutlineWidth = FallbackOutlineWidth,
 			OutlineDepthBias = FallbackOutlineDepthBias,
 			FlattenOutlineDepth = false,
@@ -132,6 +141,9 @@ public partial class CharacterLook : Resource
 			SlotIndex = Math.Max(Slots.Count, 0),
 			FaceShadowTex = null,
 			FaceMirrorAxis = 0.5f,
+			FaceYawOffsetDegrees = 0.0f,
+			FaceForwardFlip = false,
+			FaceSwapSides = false,
 			ControlTex = null,
 			HairHighlightTex = null,
 			DetailNormalTex = null,

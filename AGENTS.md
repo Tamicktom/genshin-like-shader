@@ -39,10 +39,12 @@ $GODOT --path . -- --grade-ab   # tonemap A/B → screenshots/grade_*.png
 $GODOT --path . -- --fog-ab     # fog A/B → screenshots/fog_*.png
 $GODOT --path . -- --face-ab    # face NdotL vs map → screenshots/face_*.png
 $GODOT --path . -- --hair-ab    # hair Kajiya-Kay vs mask → screenshots/hair_*.png
-$GODOT --path . -- --outline-ab # compositor outline A/B → screenshots/outline_*.png
+$GODOT --path . -- --outline-ab # hull / masked compositor / combined → screenshots/outline/
 $GODOT --path . -- --dither-ab  # terminator dither off/on → screenshots/dither_*.png
 $GODOT --path . -- --debug-ab   # shader debug views 0–7 → screenshots/debug/*.png
 $GODOT --path . -- --face-yaw   # face close-up light yaw → screenshots/face_yaw/*.png
+$GODOT --path . -- --ambient-ab # ambient zero / additive / max-floor → screenshots/ambient/
+$GODOT --path . -- --metal-ab   # Phong vs metallic ramp × light yaw → screenshots/metal/
 ```
 
 Debug view indices (`debug_view` uniform):
@@ -57,3 +59,11 @@ Debug view indices (`debug_view` uniform):
 | 5 | face map sample |
 | 6 | face angular threshold |
 | 7 | slot ID palette |
+
+Numeric checks:
+
+```bash
+python3 tools/check_shade_coverage.py
+python3 tools/check_face_map.py
+python3 tools/check_band_separation.py screenshots/ambient/ambient_max.png
+```

@@ -15,7 +15,9 @@ using Godot;
 /// <c>--outline-ab</c> cycles compositor outline debug / final modes;
 /// <c>--dither-ab</c> toggles terminator Bayer dither off vs on (hair/cloth);
 /// <c>--debug-ab</c> cycles shader debug views 0–7 under a neutral grade;
-/// <c>--face-yaw</c> face close-up light-yaw sweep with final + face debug views.
+/// <c>--face-yaw</c> face close-up light-yaw sweep with final + face debug views;
+/// <c>--ambient-ab</c> ambient zero / additive / max-floor composition;
+/// <c>--metal-ab</c> metallic Phong vs ramp across light yaw (ornament close-up).
 /// </summary>
 public partial class CaptureSceneScreenshot : Node
 {
@@ -56,6 +58,8 @@ public partial class CaptureSceneScreenshot : Node
 		DitherAb,
 		DebugAb,
 		FaceYaw,
+		AmbientAb,
+		MetalAb,
 	}
 
 	private SweepKind _sweep;
@@ -66,8 +70,12 @@ public partial class CaptureSceneScreenshot : Node
 	private List<DitherShot> _ditherShots;
 	private List<DebugShot> _debugShots;
 	private List<FaceYawShot> _faceYawShots;
+	private List<AmbientShot> _ambientShots;
+	private List<MetalShot> _metalShots;
 	private List<(ShaderMaterial Material, float SavedStrength)> _ditherTargets;
 	private List<ShaderMaterial> _debugMaterials;
+	private List<(ShaderMaterial Material, float SavedAmbient, float SavedBlend)> _ambientTargets;
+	private List<(ShaderMaterial Material, bool SavedUseGradient)> _metalTargets;
 	private int _shotIndex;
 	private float _savedSaturation = 1.1f;
 	private float _savedFogDensity = 0.0012f;
@@ -84,7 +92,11 @@ public partial class CaptureSceneScreenshot : Node
 	private ToonOutlineCompositorEffect _outlineEffect;
 	private bool _savedOutlineEnabled;
 	private float _savedHighlightStrength;
+	private bool _savedUseCharacterMask;
+	private float _savedEnvironmentOutlineStrength;
 	private ToonOutlineCompositorEffect.OutlineDebugMode _savedDebugMode;
+	private bool _hullDisabledForShot;
+	private List<(ShaderMaterial Material, Material SavedNextPass)> _hullTargets;
 	private DirectionalLight3D _sun;
 	private Transform3D _savedSunTransform;
 	private Node3D _characterRoot;
@@ -135,20 +147,32 @@ public partial class CaptureSceneScreenshot : Node
 	{
 		public OutlineShot(
 			string fileName,
-			bool enabled,
+			bool compositorEnabled,
+			bool hullEnabled,
+			bool useCharacterMask,
 			ToonOutlineCompositorEffect.OutlineDebugMode debugMode,
-			float highlightStrength)
+			float highlightStrength,
+			float environmentOutlineStrength,
+			bool closeUp)
 		{
 			FileName = fileName;
-			Enabled = enabled;
+			CompositorEnabled = compositorEnabled;
+			HullEnabled = hullEnabled;
+			UseCharacterMask = useCharacterMask;
 			DebugMode = debugMode;
 			HighlightStrength = highlightStrength;
+			EnvironmentOutlineStrength = environmentOutlineStrength;
+			CloseUp = closeUp;
 		}
 
 		public string FileName { get; }
-		public bool Enabled { get; }
+		public bool CompositorEnabled { get; }
+		public bool HullEnabled { get; }
+		public bool UseCharacterMask { get; }
 		public ToonOutlineCompositorEffect.OutlineDebugMode DebugMode { get; }
 		public float HighlightStrength { get; }
+		public float EnvironmentOutlineStrength { get; }
+		public bool CloseUp { get; }
 	}
 
 	private readonly struct DitherShot
@@ -187,6 +211,34 @@ public partial class CaptureSceneScreenshot : Node
 		public string FileName { get; }
 		public float YawDegrees { get; }
 		public int DebugView { get; }
+	}
+
+	private readonly struct AmbientShot
+	{
+		public AmbientShot(string fileName, float ambientStrength, float ambientMaxBlend)
+		{
+			FileName = fileName;
+			AmbientStrength = ambientStrength;
+			AmbientMaxBlend = ambientMaxBlend;
+		}
+
+		public string FileName { get; }
+		public float AmbientStrength { get; }
+		public float AmbientMaxBlend { get; }
+	}
+
+	private readonly struct MetalShot
+	{
+		public MetalShot(string fileName, bool useGradient, float yawDegrees)
+		{
+			FileName = fileName;
+			UseGradient = useGradient;
+			YawDegrees = yawDegrees;
+		}
+
+		public string FileName { get; }
+		public bool UseGradient { get; }
+		public float YawDegrees { get; }
 	}
 
 	public override void _Ready()
@@ -255,6 +307,20 @@ public partial class CaptureSceneScreenshot : Node
 			_shotIndex = 0;
 			_shotApplied = false;
 		}
+		else if (HasUserArg("--ambient-ab"))
+		{
+			_sweep = SweepKind.AmbientAb;
+			_ambientShots = BuildAmbientShots();
+			_shotIndex = 0;
+			_shotApplied = false;
+		}
+		else if (HasUserArg("--metal-ab"))
+		{
+			_sweep = SweepKind.MetalAb;
+			_metalShots = BuildMetalShots();
+			_shotIndex = 0;
+			_shotApplied = false;
+		}
 		else
 		{
 			_sweep = SweepKind.None;
@@ -297,6 +363,18 @@ public partial class CaptureSceneScreenshot : Node
 		if (_sweep == SweepKind.FaceYaw)
 		{
 			ProcessFaceYawSweep();
+			return;
+		}
+
+		if (_sweep == SweepKind.AmbientAb)
+		{
+			ProcessAmbientSweep();
+			return;
+		}
+
+		if (_sweep == SweepKind.MetalAb)
+		{
+			ProcessMetalSweep();
 			return;
 		}
 
@@ -775,6 +853,8 @@ public partial class CaptureSceneScreenshot : Node
 			_savedOutlineEnabled = _outlineEffect.Enabled;
 			_savedHighlightStrength = _outlineEffect.HighlightStrength;
 			_savedDebugMode = _outlineEffect.DebugMode;
+			_savedUseCharacterMask = _outlineEffect.UseCharacterMask;
+			_savedEnvironmentOutlineStrength = _outlineEffect.EnvironmentOutlineStrength;
 			_outlineEffect.Enabled = false;
 		}
 
@@ -945,34 +1025,101 @@ public partial class CaptureSceneScreenshot : Node
 
 	private static List<OutlineShot> BuildOutlineShots()
 	{
-		return new List<OutlineShot>
+		var shots = new List<OutlineShot>();
+		bool[] closeUps = { false, true };
+		foreach (bool closeUp in closeUps)
 		{
-			new(
-				"outline_hull.png",
+			string prefix = closeUp ? "outline/close_" : "outline/";
+			shots.Add(new(
+				prefix + "none.png",
+				false,
+				false,
+				true,
+				ToonOutlineCompositorEffect.OutlineDebugMode.Final,
+				0.0f,
+				0.0f,
+				closeUp));
+			shots.Add(new(
+				prefix + "hull.png",
+				false,
+				true,
+				true,
+				ToonOutlineCompositorEffect.OutlineDebugMode.Final,
+				0.0f,
+				0.0f,
+				closeUp));
+			shots.Add(new(
+				prefix + "comp_masked.png",
+				true,
+				false,
+				true,
+				ToonOutlineCompositorEffect.OutlineDebugMode.Final,
+				0.0f,
+				0.0f,
+				closeUp));
+			shots.Add(new(
+				prefix + "comp_unmasked.png",
+				true,
+				false,
 				false,
 				ToonOutlineCompositorEffect.OutlineDebugMode.Final,
-				0.0f),
-			new(
-				"outline_debug_depth.png",
+				0.0f,
+				1.0f,
+				closeUp));
+			shots.Add(new(
+				prefix + "combined.png",
 				true,
-				ToonOutlineCompositorEffect.OutlineDebugMode.RawDepth,
-				0.0f),
-			new(
-				"outline_debug_normal.png",
 				true,
-				ToonOutlineCompositorEffect.OutlineDebugMode.DepthEdges,
-				0.0f),
-			new(
-				"outline_comp.png",
 				true,
 				ToonOutlineCompositorEffect.OutlineDebugMode.Final,
-				0.0f),
-			new(
-				"outline_highlight.png",
+				0.0f,
+				0.0f,
+				closeUp));
+			shots.Add(new(
+				prefix + "mask.png",
+				true,
+				true,
+				true,
+				ToonOutlineCompositorEffect.OutlineDebugMode.CharacterMask,
+				0.0f,
+				0.0f,
+				closeUp));
+			shots.Add(new(
+				prefix + "highlight.png",
+				true,
+				true,
 				true,
 				ToonOutlineCompositorEffect.OutlineDebugMode.Final,
-				0.01f),
+				0.12f,
+				0.0f,
+				closeUp));
+		}
+
+		return shots;
+	}
+
+	private static List<AmbientShot> BuildAmbientShots()
+	{
+		return new List<AmbientShot>
+		{
+			new("ambient/ambient_zero.png", 0.0f, 0.0f),
+			new("ambient/ambient_add.png", 0.2f, 0.0f),
+			new("ambient/ambient_max.png", 0.2f, 1.0f),
 		};
+	}
+
+	private static List<MetalShot> BuildMetalShots()
+	{
+		float[] yaws = { 0.0f, 45.0f, 90.0f, 135.0f };
+		var shots = new List<MetalShot>();
+		foreach (float yaw in yaws)
+		{
+			string tag = FormatYawTag(yaw);
+			shots.Add(new($"metal/{tag}_phong.png", false, yaw));
+			shots.Add(new($"metal/{tag}_ramp.png", true, yaw));
+		}
+
+		return shots;
 	}
 
 	private static List<DitherShot> BuildDitherShots()
@@ -1203,7 +1350,10 @@ public partial class CaptureSceneScreenshot : Node
 			_savedOutlineEnabled = _outlineEffect.Enabled;
 			_savedHighlightStrength = _outlineEffect.HighlightStrength;
 			_savedDebugMode = _outlineEffect.DebugMode;
+			_savedUseCharacterMask = _outlineEffect.UseCharacterMask;
+			_savedEnvironmentOutlineStrength = _outlineEffect.EnvironmentOutlineStrength;
 			FreezeSpin(GetNodeOrNull(RequiredNodePath));
+			EnsureCameraSaved();
 		}
 
 		if (!_shotApplied)
@@ -1241,21 +1391,494 @@ public partial class CaptureSceneScreenshot : Node
 
 	private void ApplyOutlineShot(OutlineShot shot)
 	{
-		_outlineEffect.Enabled = shot.Enabled;
+		_outlineEffect.Enabled = shot.CompositorEnabled;
 		_outlineEffect.DebugMode = shot.DebugMode;
 		_outlineEffect.HighlightStrength = shot.HighlightStrength;
+		_outlineEffect.UseCharacterMask = shot.UseCharacterMask;
+		_outlineEffect.EnvironmentOutlineStrength = shot.EnvironmentOutlineStrength;
+		SetHullEnabled(shot.HullEnabled);
+		ApplyOutlineCamera(shot.CloseUp);
 	}
 
 	private void RestoreOutlineEffect()
 	{
-		if (_outlineEffect == null || !GodotObject.IsInstanceValid(_outlineEffect))
+		if (_outlineEffect != null && GodotObject.IsInstanceValid(_outlineEffect))
+		{
+			_outlineEffect.Enabled = _savedOutlineEnabled;
+			_outlineEffect.HighlightStrength = _savedHighlightStrength;
+			_outlineEffect.DebugMode = _savedDebugMode;
+			_outlineEffect.UseCharacterMask = _savedUseCharacterMask;
+			_outlineEffect.EnvironmentOutlineStrength = _savedEnvironmentOutlineStrength;
+		}
+
+		RestoreHull();
+		RestoreOutlineCamera();
+	}
+
+	private void SetHullEnabled(bool enabled)
+	{
+		if (_hullTargets == null)
+		{
+			_hullTargets = CollectHullTargets(GetNodeOrNull(RequiredNodePath));
+		}
+
+		foreach ((ShaderMaterial material, Material savedNext) in _hullTargets)
+		{
+			if (material == null || !GodotObject.IsInstanceValid(material))
+			{
+				continue;
+			}
+
+			material.NextPass = enabled ? savedNext : null;
+		}
+
+		_hullDisabledForShot = !enabled;
+	}
+
+	private void RestoreHull()
+	{
+		if (_hullTargets == null)
 		{
 			return;
 		}
 
-		_outlineEffect.Enabled = _savedOutlineEnabled;
-		_outlineEffect.HighlightStrength = _savedHighlightStrength;
-		_outlineEffect.DebugMode = _savedDebugMode;
+		foreach ((ShaderMaterial material, Material savedNext) in _hullTargets)
+		{
+			if (material == null || !GodotObject.IsInstanceValid(material))
+			{
+				continue;
+			}
+
+			material.NextPass = savedNext;
+		}
+
+		_hullDisabledForShot = false;
+	}
+
+	private static List<(ShaderMaterial Material, Material SavedNextPass)> CollectHullTargets(Node root)
+	{
+		var result = new List<(ShaderMaterial, Material)>();
+		if (root == null)
+		{
+			return result;
+		}
+
+		CollectHullTargetsRecursive(root, result);
+		return result;
+	}
+
+	private static void CollectHullTargetsRecursive(
+		Node node,
+		List<(ShaderMaterial Material, Material SavedNextPass)> result)
+	{
+		if (node is MeshInstance3D meshInstance && meshInstance.Mesh != null)
+		{
+			int surfaces = meshInstance.Mesh.GetSurfaceCount();
+			for (int i = 0; i < surfaces; i++)
+			{
+				Material mat = meshInstance.GetActiveMaterial(i);
+				if (mat is ShaderMaterial shaderMaterial
+					&& IsToonMaterial(shaderMaterial)
+					&& shaderMaterial.NextPass != null)
+				{
+					result.Add((shaderMaterial, shaderMaterial.NextPass));
+				}
+			}
+		}
+
+		foreach (Node child in node.GetChildren())
+		{
+			CollectHullTargetsRecursive(child, result);
+		}
+	}
+
+	private void ApplyOutlineCamera(bool closeUp)
+	{
+		EnsureCameraSaved();
+		if (_camera == null)
+		{
+			return;
+		}
+
+		if (closeUp)
+		{
+			_camera.UseFocus = true;
+			_camera.FocusHeightFraction = 0.55f;
+			_camera.FocusRadius = 0.35f;
+			_camera.YawDegrees = 20.0f;
+			_camera.PitchDegrees = -8.0f;
+		}
+		else
+		{
+			_camera.UseFocus = _savedUseFocus;
+			_camera.FocusHeightFraction = _savedFocusHeightFraction;
+			_camera.FocusRadius = _savedFocusRadius;
+			_camera.YawDegrees = _savedYawDegrees;
+			_camera.PitchDegrees = _savedPitchDegrees;
+		}
+
+		_camera.FrameTarget();
+	}
+
+	private void RestoreOutlineCamera()
+	{
+		if (_camera == null || !GodotObject.IsInstanceValid(_camera))
+		{
+			return;
+		}
+
+		_camera.UseFocus = _savedUseFocus;
+		_camera.FocusHeightFraction = _savedFocusHeightFraction;
+		_camera.FocusRadius = _savedFocusRadius;
+		_camera.YawDegrees = _savedYawDegrees;
+		_camera.PitchDegrees = _savedPitchDegrees;
+		_camera.FrameTarget();
+	}
+
+	private void EnsureCameraSaved()
+	{
+		if (_camera != null)
+		{
+			return;
+		}
+
+		_camera = GetNodeOrNull<FrameCharacterCamera>("Camera3D");
+		if (_camera == null)
+		{
+			return;
+		}
+
+		_savedUseFocus = _camera.UseFocus;
+		_savedFocusHeightFraction = _camera.FocusHeightFraction;
+		_savedFocusRadius = _camera.FocusRadius;
+		_savedYawDegrees = _camera.YawDegrees;
+		_savedPitchDegrees = _camera.PitchDegrees;
+	}
+
+	private void ProcessAmbientSweep()
+	{
+		if (_ambientShots == null || _shotIndex >= _ambientShots.Count)
+		{
+			RestoreAmbientTargets();
+			RestoreNeutralEnvironment();
+			RestoreSpin();
+			SetProcess(false);
+			GetTree().Quit();
+			return;
+		}
+
+		if (!IsSceneReady())
+		{
+			return;
+		}
+
+		if (_ambientTargets == null)
+		{
+			if (!BeginNeutralDebugCapture())
+			{
+				return;
+			}
+
+			_ambientTargets = CollectAmbientTargets(this);
+			if (_ambientTargets.Count == 0)
+			{
+				GD.PushError("capture_scene_screenshot: ambient-ab found no toon materials");
+				RestoreNeutralEnvironment();
+				SetProcess(false);
+				GetTree().Quit();
+				return;
+			}
+
+			FreezeSpin(GetNodeOrNull(RequiredNodePath));
+		}
+
+		if (!_shotApplied)
+		{
+			ApplyAmbientShot(_ambientShots[_shotIndex]);
+			_shotApplied = true;
+			_waitingForSettle = true;
+			_settleCount = 0;
+			return;
+		}
+
+		_settleCount++;
+		if (_settleCount < SettleFrames)
+		{
+			return;
+		}
+
+		AmbientShot done = _ambientShots[_shotIndex];
+		CaptureOnce(done.FileName);
+		GD.Print($"capture_scene_screenshot: ambient-ab {_shotIndex + 1}/{_ambientShots.Count} -> {done.FileName}");
+
+		_shotIndex++;
+		_shotApplied = false;
+		_waitingForSettle = false;
+		_settleCount = 0;
+
+		if (_shotIndex >= _ambientShots.Count)
+		{
+			RestoreAmbientTargets();
+			RestoreNeutralEnvironment();
+			RestoreSpin();
+			SetProcess(false);
+			GetTree().Quit();
+		}
+	}
+
+	private void ApplyAmbientShot(AmbientShot shot)
+	{
+		foreach ((ShaderMaterial material, float _, float _) in _ambientTargets)
+		{
+			if (material == null || !GodotObject.IsInstanceValid(material))
+			{
+				continue;
+			}
+
+			material.SetShaderParameter(ShaderParams.AmbientStrength, shot.AmbientStrength);
+			material.SetShaderParameter(ShaderParams.AmbientMaxBlend, shot.AmbientMaxBlend);
+		}
+	}
+
+	private void RestoreAmbientTargets()
+	{
+		if (_ambientTargets == null)
+		{
+			return;
+		}
+
+		foreach ((ShaderMaterial material, float savedAmbient, float savedBlend) in _ambientTargets)
+		{
+			if (material == null || !GodotObject.IsInstanceValid(material))
+			{
+				continue;
+			}
+
+			material.SetShaderParameter(ShaderParams.AmbientStrength, savedAmbient);
+			material.SetShaderParameter(ShaderParams.AmbientMaxBlend, savedBlend);
+		}
+	}
+
+	private static List<(ShaderMaterial Material, float SavedAmbient, float SavedBlend)> CollectAmbientTargets(Node root)
+	{
+		var result = new List<(ShaderMaterial, float, float)>();
+		CollectAmbientTargetsRecursive(root, result);
+		return result;
+	}
+
+	private static void CollectAmbientTargetsRecursive(
+		Node node,
+		List<(ShaderMaterial Material, float SavedAmbient, float SavedBlend)> result)
+	{
+		if (node is MeshInstance3D meshInstance && meshInstance.Mesh != null)
+		{
+			int surfaces = meshInstance.Mesh.GetSurfaceCount();
+			for (int i = 0; i < surfaces; i++)
+			{
+				Material mat = meshInstance.GetActiveMaterial(i);
+				if (mat is not ShaderMaterial shaderMaterial || !IsToonMaterial(shaderMaterial))
+				{
+					continue;
+				}
+
+				float ambient = shaderMaterial.GetShaderParameter(ShaderParams.AmbientStrength).AsSingle();
+				float blend = 1.0f;
+				Variant blendVar = shaderMaterial.GetShaderParameter(ShaderParams.AmbientMaxBlend);
+				if (blendVar.VariantType == Variant.Type.Float || blendVar.VariantType == Variant.Type.Int)
+				{
+					blend = blendVar.AsSingle();
+				}
+
+				result.Add((shaderMaterial, ambient, blend));
+			}
+		}
+
+		foreach (Node child in node.GetChildren())
+		{
+			CollectAmbientTargetsRecursive(child, result);
+		}
+	}
+
+	private void ProcessMetalSweep()
+	{
+		if (_metalShots == null || _shotIndex >= _metalShots.Count)
+		{
+			RestoreMetalTargets();
+			RestoreFaceYawSweep();
+			SetProcess(false);
+			GetTree().Quit();
+			return;
+		}
+
+		if (!IsSceneReady())
+		{
+			return;
+		}
+
+		if (_metalTargets == null)
+		{
+			if (!BeginNeutralDebugCapture())
+			{
+				return;
+			}
+
+			_characterRoot = GetNodeOrNull<Node3D>(RequiredNodePath);
+			if (_characterRoot == null)
+			{
+				GD.PushError("capture_scene_screenshot: metal-ab needs character root");
+				RestoreNeutralEnvironment();
+				SetProcess(false);
+				GetTree().Quit();
+				return;
+			}
+
+			_savedCharacterTransform = _characterRoot.GlobalTransform;
+			_characterRoot.Rotation = Vector3.Zero;
+
+			_sun = GetNodeOrNull<DirectionalLight3D>("Sun");
+			if (_sun == null)
+			{
+				GD.PushError("capture_scene_screenshot: metal-ab needs Sun DirectionalLight3D");
+				RestoreFaceYawSweep();
+				SetProcess(false);
+				GetTree().Quit();
+				return;
+			}
+
+			_savedSunTransform = _sun.GlobalTransform;
+			_metalTargets = CollectMetalTargets(_characterRoot);
+			if (_metalTargets.Count == 0)
+			{
+				GD.PushError("capture_scene_screenshot: metal-ab found no metallic materials");
+				RestoreFaceYawSweep();
+				SetProcess(false);
+				GetTree().Quit();
+				return;
+			}
+
+			FreezeSpin(_characterRoot);
+			EnsureCameraSaved();
+			if (_camera != null)
+			{
+				_camera.UseFocus = true;
+				_camera.FocusHeightFraction = 0.55f;
+				_camera.FocusRadius = 0.25f;
+				_camera.YawDegrees = 24.0f;
+				_camera.PitchDegrees = -6.0f;
+				_camera.FrameTarget();
+			}
+		}
+
+		if (!_shotApplied)
+		{
+			MetalShot shot = _metalShots[_shotIndex];
+			ApplySunYaw(shot.YawDegrees);
+			ApplyMetalShot(shot);
+			_shotApplied = true;
+			_waitingForSettle = true;
+			_settleCount = 0;
+			return;
+		}
+
+		_settleCount++;
+		if (_settleCount < SettleFrames)
+		{
+			return;
+		}
+
+		MetalShot done = _metalShots[_shotIndex];
+		CaptureOnce(done.FileName);
+		GD.Print($"capture_scene_screenshot: metal-ab {_shotIndex + 1}/{_metalShots.Count} -> {done.FileName}");
+
+		_shotIndex++;
+		_shotApplied = false;
+		_waitingForSettle = false;
+		_settleCount = 0;
+
+		if (_shotIndex >= _metalShots.Count)
+		{
+			RestoreMetalTargets();
+			RestoreFaceYawSweep();
+			SetProcess(false);
+			GetTree().Quit();
+		}
+	}
+
+	private void ApplyMetalShot(MetalShot shot)
+	{
+		foreach ((ShaderMaterial material, bool _) in _metalTargets)
+		{
+			if (material == null || !GodotObject.IsInstanceValid(material))
+			{
+				continue;
+			}
+
+			material.SetShaderParameter(ShaderParams.UseMetallicGradient, shot.UseGradient);
+		}
+	}
+
+	private void RestoreMetalTargets()
+	{
+		if (_metalTargets == null)
+		{
+			return;
+		}
+
+		foreach ((ShaderMaterial material, bool savedUse) in _metalTargets)
+		{
+			if (material == null || !GodotObject.IsInstanceValid(material))
+			{
+				continue;
+			}
+
+			material.SetShaderParameter(ShaderParams.UseMetallicGradient, savedUse);
+		}
+	}
+
+	private static List<(ShaderMaterial Material, bool SavedUseGradient)> CollectMetalTargets(Node root)
+	{
+		var result = new List<(ShaderMaterial, bool)>();
+		CollectMetalTargetsRecursive(root, result);
+		return result;
+	}
+
+	private static void CollectMetalTargetsRecursive(
+		Node node,
+		List<(ShaderMaterial Material, bool SavedUseGradient)> result)
+	{
+		if (node is MeshInstance3D meshInstance && meshInstance.Mesh != null)
+		{
+			int surfaces = meshInstance.Mesh.GetSurfaceCount();
+			for (int i = 0; i < surfaces; i++)
+			{
+				Material mat = meshInstance.GetActiveMaterial(i);
+				if (mat is not ShaderMaterial shaderMaterial || !IsToonMaterial(shaderMaterial))
+				{
+					continue;
+				}
+
+				Variant tex = shaderMaterial.GetShaderParameter(ShaderParams.MetallicGradientTex);
+				bool hasTex = tex.VariantType == Variant.Type.Object && tex.AsGodotObject() is Texture2D;
+				if (!hasTex)
+				{
+					continue;
+				}
+
+				bool useGrad = false;
+				Variant useVar = shaderMaterial.GetShaderParameter(ShaderParams.UseMetallicGradient);
+				if (useVar.VariantType == Variant.Type.Bool)
+				{
+					useGrad = useVar.AsBool();
+				}
+
+				result.Add((shaderMaterial, useGrad));
+			}
+		}
+
+		foreach (Node child in node.GetChildren())
+		{
+			CollectMetalTargetsRecursive(child, result);
+		}
 	}
 
 	private ToonOutlineCompositorEffect FindOutlineEffect()

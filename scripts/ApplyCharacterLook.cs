@@ -18,21 +18,44 @@ public partial class ApplyCharacterLook : Node3D
 	public bool ApplyOnReady { get; set; } = true;
 
 	/// <summary>
-	/// Multiplies each slot's OutlineWidth (demo uses 2.0 for a thicker silhouette).
+	/// Multiplies each slot's OutlineWidth (demo uses 1.8 for a thicker silhouette).
 	/// </summary>
 	[Export]
 	public float OutlineWidthScale { get; set; } = 1.0f;
 
 	/// <summary>
 	/// Node whose world +Z / +X drive face-shadow head axes.
-	/// Empty = this node (character root). Prefer a child Marker3D named HeadAxes.
+	/// Empty = this node (character root). Prefer a child Marker3D named HeadAxes,
+	/// or a Skeleton3D when <see cref="HeadBoneName"/> is set.
 	/// </summary>
 	[Export]
 	public NodePath HeadNodePath { get; set; } = new NodePath("HeadAxes");
 
+	/// <summary>
+	/// Optional bone name when <see cref="HeadNodePath"/> points at a Skeleton3D.
+	/// Empty = use the node transform directly.
+	/// </summary>
+	[Export]
+	public string HeadBoneName { get; set; } = "";
+
+	/// <summary>
+	/// When true, print mesh surface → slot / preset / extra maps during ApplyToTree.
+	/// </summary>
+	[Export]
+	public bool LogSlotResolution { get; set; }
+
+	/// <summary>
+	/// Visual layer bit used when <see cref="LookSlot.IncludeInOutlineMask"/> is true.
+	/// Default layer 2 (bit 1). CharacterMaskPass culls to this layer.
+	/// </summary>
+	[Export(PropertyHint.Layers3DRender)]
+	public uint CharacterMaskLayer { get; set; } = 2;
+
 	private readonly List<ShaderMaterial> _faceShadowMaterials = new();
 	private readonly List<ShaderMaterial> _headAxisMaterials = new();
 	private Node3D _headNode;
+	private Skeleton3D _headSkeleton;
+	private int _headBoneIndex = -1;
 
 	public override void _Ready()
 	{
@@ -52,20 +75,18 @@ public partial class ApplyCharacterLook : Node3D
 			return;
 		}
 
-		if (_headNode == null || !GodotObject.IsInstanceValid(_headNode))
+		if (!TryGetHeadBasis(out Basis basis))
 		{
 			ResolveHeadNode();
-			if (_headNode == null)
+			if (!TryGetHeadBasis(out basis))
 			{
 				return;
 			}
 		}
 
-		Basis basis = _headNode.GlobalTransform.Basis;
 		// Unity-style forward/right: Godot +Z faces the camera when the character does.
 		Vector3 forward = basis.Z.Normalized();
 		Vector3 right = basis.X.Normalized();
-		Vector3 position = _headNode.GlobalTransform.Origin;
 
 		foreach (ShaderMaterial material in _headAxisMaterials)
 		{
@@ -76,7 +97,6 @@ public partial class ApplyCharacterLook : Node3D
 
 			material.SetShaderParameter(ShaderParams.HeadForward, forward);
 			material.SetShaderParameter(ShaderParams.HeadRight, right);
-			material.SetShaderParameter(ShaderParams.HeadPosition, position);
 		}
 	}
 
@@ -109,6 +129,9 @@ public partial class ApplyCharacterLook : Node3D
 	private void ResolveHeadNode()
 	{
 		_headNode = null;
+		_headSkeleton = null;
+		_headBoneIndex = -1;
+
 		if (HeadNodePath != null && !HeadNodePath.IsEmpty)
 		{
 			_headNode = GetNodeOrNull<Node3D>(HeadNodePath);
@@ -118,6 +141,41 @@ public partial class ApplyCharacterLook : Node3D
 		{
 			_headNode = this;
 		}
+
+		if (!string.IsNullOrEmpty(HeadBoneName) && _headNode is Skeleton3D skeleton)
+		{
+			int boneIndex = skeleton.FindBone(HeadBoneName);
+			if (boneIndex >= 0)
+			{
+				_headSkeleton = skeleton;
+				_headBoneIndex = boneIndex;
+			}
+			else
+			{
+				GD.PushWarning(
+					$"apply_character_look: HeadBoneName '{HeadBoneName}' not found on {_headNode.Name}");
+			}
+		}
+	}
+
+	private bool TryGetHeadBasis(out Basis basis)
+	{
+		basis = default;
+		if (_headSkeleton != null
+			&& GodotObject.IsInstanceValid(_headSkeleton)
+			&& _headBoneIndex >= 0)
+		{
+			basis = _headSkeleton.GetBoneGlobalPose(_headBoneIndex).Basis;
+			return true;
+		}
+
+		if (_headNode == null || !GodotObject.IsInstanceValid(_headNode))
+		{
+			return false;
+		}
+
+		basis = _headNode.GlobalTransform.Basis;
+		return true;
 	}
 
 	private void ApplyRecursive(Node node)
@@ -146,15 +204,33 @@ public partial class ApplyCharacterLook : Node3D
 		meshInstance.ExtraCullMargin = Mathf.Max(meshInstance.ExtraCullMargin, 0.25f);
 
 		int surfaceCount = meshInstance.Mesh.GetSurfaceCount();
+		bool anyMask = false;
 		for (int surfaceIndex = 0; surfaceIndex < surfaceCount; surfaceIndex++)
 		{
 			Material sourceMaterial = meshInstance.GetActiveMaterial(surfaceIndex);
-			ShaderMaterial toonMaterial = CreateToonMaterial(sourceMaterial, meshInstance.Name);
+			ShaderMaterial toonMaterial = CreateToonMaterial(
+				sourceMaterial,
+				meshInstance.Name,
+				out bool includeInMask);
 			meshInstance.SetSurfaceOverrideMaterial(surfaceIndex, toonMaterial);
+			anyMask |= includeInMask;
+		}
+
+		// Per-mesh layer (not per-surface): include if any surface opts into the mask.
+		if (anyMask && CharacterMaskLayer != 0)
+		{
+			meshInstance.Layers |= CharacterMaskLayer;
+		}
+		else if (CharacterMaskLayer != 0)
+		{
+			meshInstance.Layers &= ~CharacterMaskLayer;
 		}
 	}
 
-	private ShaderMaterial CreateToonMaterial(Material sourceMaterial, string meshName)
+	private ShaderMaterial CreateToonMaterial(
+		Material sourceMaterial,
+		string meshName,
+		out bool includeInMask)
 	{
 		Texture2D albedoTexture = null;
 		Color albedoColor = Colors.White;
@@ -187,6 +263,48 @@ public partial class ApplyCharacterLook : Node3D
 
 		ResolvedLookSlot resolved = Look.ResolveSlot(meshName, texturePath);
 		ToonPreset preset = resolved.Preset;
+		includeInMask = resolved.IncludeInOutlineMask;
+
+		if (LogSlotResolution)
+		{
+			string presetName = preset?.ResourcePath;
+			if (string.IsNullOrEmpty(presetName))
+			{
+				presetName = preset != null ? preset.GetType().Name : "null";
+			}
+
+			string extras = "";
+			if (resolved.FaceShadowTex != null)
+			{
+				extras += " face_shadow";
+			}
+
+			if (resolved.HairHighlightTex != null)
+			{
+				extras += " hair_hl";
+			}
+
+			if (resolved.ControlTex != null)
+			{
+				extras += " control";
+			}
+
+			if (resolved.DetailNormalTex != null)
+			{
+				extras += " detail_n";
+			}
+
+			if (string.IsNullOrEmpty(extras))
+			{
+				extras = " (none)";
+			}
+
+			GD.Print(
+				$"apply_character_look: {meshName} -> slot[{resolved.SlotIndex}]={resolved.SlotName}"
+					+ $" preset={presetName} outline={resolved.EnableOutline}"
+					+ $" mask={resolved.IncludeInOutlineMask} extras={extras.Trim()}"
+					+ $" tex={texturePath}");
+		}
 
 		var material = new ShaderMaterial
 		{
@@ -208,6 +326,15 @@ public partial class ApplyCharacterLook : Node3D
 		BindExtraMap(material, ShaderParams.DetailNormalTex, ShaderParams.UseDetailNormal, resolved.DetailNormalTex);
 
 		material.SetShaderParameter(ShaderParams.FaceMirrorAxis, resolved.FaceMirrorAxis);
+		material.SetShaderParameter(
+			ShaderParams.FaceYawOffset,
+			Mathf.DegToRad(resolved.FaceYawOffsetDegrees));
+		material.SetShaderParameter(
+			ShaderParams.FaceForwardSign,
+			resolved.FaceForwardFlip ? -1.0f : 1.0f);
+		material.SetShaderParameter(
+			ShaderParams.FaceSideSign,
+			resolved.FaceSwapSides ? -1.0f : 1.0f);
 		material.SetShaderParameter(ShaderParams.DebugSlotId, (float)resolved.SlotIndex);
 		material.SetShaderParameter(ShaderParams.DebugView, 0);
 

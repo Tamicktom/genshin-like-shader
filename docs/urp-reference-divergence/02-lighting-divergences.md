@@ -48,51 +48,20 @@ URP `-0.5` corresponds to Half-Lambert `0.25`. Current starting thresholds (hair
 
 ## 3. Ambient composition washes the cel bands
 
-Classification: **active divergence**
+Classification: **resolved (P1.1)**
 
-Godot writes a flat ambient term as emission in [`genshin_toon.gdshader`, lines 129–135](../../shaders/genshin_toon.gdshader):
-
-```text
-EMISSION = ALBEDO * ambient_color * ambient_strength
-```
-
-It then adds per-light diffuse through:
+Godot still writes ambient as emission in [`genshin_toon.gdshader`](../../shaders/genshin_toon.gdshader), but `ambient_max_blend` (default `1`) subtracts that floor from each light’s diffuse contribution:
 
 ```text
-DIFFUSE_LIGHT += lit_term * LIGHT_COLOR * light_intensity
+EMISSION = ALBEDO * ambient_term
+DIFFUSE_LIGHT += max(direct - ambient_term * ambient_max_blend, 0)
 ```
 
-The effective result is approximately:
+With a single directional key this approximates URP’s `albedo * max(indirect, direct)`. Validate with `$GODOT --path . -- --ambient-ab` and `tools/check_band_separation.py`.
 
-```text
-final = albedo * summed_diffuse + albedo * ambient
-```
+### Historical note
 
-The URP reference instead computes:
-
-```text
-final = albedo * max(indirect, main + additional) + emission
-```
-
-The difference is important:
-
-- additive ambient raises both bands continuously;
-- `max` supplies a floor only when direct light falls below the indirect term;
-- multiple Godot lights add complete shadow-tint contributions, potentially flattening contrast;
-- Godot emission is not modulated by direct shadowing and can make cast shadows look detached.
-
-The scene uses a directional light energy of `0.3`, while presets multiply it by about `0.7`; ambient strength is typically `0.2`. Those values make the ambient term a comparatively large part of the final image. See [`main.tscn`, lines 99–109](../../scenes/main.tscn) and [`ToonPreset.cs`, lines 44–52](../../scripts/resources/ToonPreset.cs).
-
-### Corrective options
-
-In impact order:
-
-1. Restore a deep-shadow-capable shade signal before touching intensity.
-2. Reduce the ambient emission and evaluate under one key light.
-3. If URP-like composition is desired, move custom composition into a path where indirect and direct can be compared rather than relying on standard additive `light()` accumulation.
-4. If retaining Godot accumulation, treat later lights as controlled fills with reduced per-light contribution, similar to the URP sample's 25% factor.
-
-Do not compensate by raising sun energy first. That increases highlights and specular terms without restoring the missing shadow domain.
+Before the fix, additive ambient raised both bands continuously while sun energy stayed at `0.3`, washing shadow families toward lit. Do not compensate by raising sun energy first.
 
 ## 4. Cast-shadow remapping is useful but semantically broad
 

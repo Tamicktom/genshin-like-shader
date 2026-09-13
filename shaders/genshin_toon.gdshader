@@ -30,6 +30,9 @@ uniform float cast_shadow_softness : hint_range(0.001, 0.8) = 0.22;
 uniform float light_intensity : hint_range(0.0, 2.0) = 0.75;
 uniform float ambient_strength : hint_range(0.0, 1.0) = 0.22;
 uniform vec4 ambient_color : source_color = vec4(0.78, 0.8, 0.9, 1.0);
+// 0 = additive ambient emission (legacy). 1 = subtract ambient from direct so
+// a single key light approximates albedo * max(indirect, direct).
+uniform float ambient_max_blend : hint_range(0.0, 1.0) = 1.0;
 
 group_uniforms OuterShadow;
 // Thin second terminator band inside the main shadow. Strength 0 = off (current look).
@@ -76,9 +79,14 @@ uniform bool use_face_shadow = false;
 uniform float face_mirror_axis : hint_range(0.0, 1.0) = 0.5;
 // Softness for face map comparison. Independent of body shadow_smoothness.
 uniform float face_shadow_softness : hint_range(0.001, 0.35) = 0.04;
+// Extra yaw (radians) applied to light XZ before face dots.
+uniform float face_yaw_offset = 0.0;
+// +1 / -1. Negate to flip head forward for the angular threshold.
+uniform float face_forward_sign = 1.0;
+// +1 / -1. Negate to swap left/right mirrored-UV selection.
+uniform float face_side_sign = 1.0;
 uniform vec3 head_forward = vec3(0.0, 0.0, 1.0);
 uniform vec3 head_right = vec3(1.0, 0.0, 0.0);
-uniform vec3 head_position = vec3(0.0);
 // Bound for look compatibility. Do not assign DEPTH from this shader: a
 // fragment depth write disables MSAA coverage and stipples the whole mesh.
 uniform float outline_depth_flatten : hint_range(0.0, 1.0) = 0.0;
@@ -147,6 +155,7 @@ void fragment() {
 	SPECULAR = 0.0;
 
 	// Gentle flat fill — keep this low so lit areas are not washed out.
+	// Combined with ambient_max_blend in light() to approximate max(indirect, direct).
 	EMISSION = ALBEDO * ambient_color.rgb * ambient_strength;
 
 	// Debug views need a clean signal: albedo multiplies DIFFUSE_LIGHT and
@@ -202,11 +211,16 @@ void light() {
 		// by light side. LIGHT is view-space; convert to world for head axes.
 		vec3 light_world = normalize((INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).xyz);
 		vec2 light_xz = normalize(light_world.xz);
+		// Rotate light around Y by face_yaw_offset (radians).
+		float cy = cos(face_yaw_offset);
+		float sy = sin(face_yaw_offset);
+		light_xz = vec2(cy * light_xz.x - sy * light_xz.y, sy * light_xz.x + cy * light_xz.y);
+
 		vec2 forward_xz = normalize(head_forward.xz);
 		vec2 right_xz = normalize(head_right.xz);
 
-		float dot_f = dot(forward_xz, light_xz);
-		float dot_r = clamp(dot(right_xz, light_xz), -1.0, 1.0);
+		float dot_f = face_forward_sign * dot(forward_xz, light_xz);
+		float dot_r = clamp(face_side_sign * dot(right_xz, light_xz), -1.0, 1.0);
 		float front = smoothstep(-face_soft, face_soft, dot_f);
 
 		// acos/PI*2 ∈ [0,2]. Remap so front ≈ 0 and side ≈ 1: lit when map > angle.
@@ -278,7 +292,11 @@ void light() {
 		vec3 main_term = mix(shadow_color.rgb, lit_color.rgb, shade);
 		float outer_band = (1.0 - shade) * shade_outer;
 		vec3 lit_term = mix(main_term, outer_shadow_color.rgb, outer_band * outer_shadow_strength);
-		DIFFUSE_LIGHT += lit_term * LIGHT_COLOR * light_intensity;
+		vec3 direct = lit_term * LIGHT_COLOR * light_intensity;
+		// Approximate albedo * max(indirect, direct) under Godot's additive light():
+		// emission already carries ambient; subtract it from direct when blend = 1.
+		vec3 ambient_term = ambient_color.rgb * ambient_strength;
+		DIFFUSE_LIGHT += max(direct - ambient_term * ambient_max_blend, vec3(0.0));
 
 		vec3 half_dir = normalize(VIEW + LIGHT);
 

@@ -29,6 +29,7 @@ public static class ShaderParams
 	public const string LightIntensity = "light_intensity";
 	public const string AmbientStrength = "ambient_strength";
 	public const string AmbientColor = "ambient_color";
+	public const string AmbientMaxBlend = "ambient_max_blend";
 
 	//* Outer shadow (second terminator band; strength 0 = off)
 	public const string OuterShadowColor = "outer_shadow_color";
@@ -75,9 +76,11 @@ public static class ShaderParams
 	public const string UseFaceShadow = "use_face_shadow";
 	public const string FaceMirrorAxis = "face_mirror_axis";
 	public const string FaceShadowSoftness = "face_shadow_softness";
+	public const string FaceYawOffset = "face_yaw_offset";
+	public const string FaceForwardSign = "face_forward_sign";
+	public const string FaceSideSign = "face_side_sign";
 	public const string HeadForward = "head_forward";
 	public const string HeadRight = "head_right";
-	public const string HeadPosition = "head_position";
 	public const string ControlTex = "control_tex";
 	public const string UseControlTex = "use_control_tex";
 	public const string HairHighlightTex = "hair_highlight_tex";

@@ -12,7 +12,7 @@ The shader stack is **opt-in** and **data-driven**. Character shading lives in `
 | Demo character | Raiden Shogun GLB under `assets/raiden-shogun/` |
 | Look data | `looks/raiden_shogun.tres` + shared presets under `materials/presets/` |
 | Toon shading | Applied via look table on the Raiden scene only |
-| Outline | Inverted hull (albedo-tinted) + compositor reverse-Z depth Sobel (default on) |
+| Outline | Inverted hull (albedo-tinted) + character-masked compositor depth Sobel (default on) |
 | Shadows | Orthogonal directional map, 8192 atlas, Ultra PCF |
 | Anti-aliasing | MSAA 4x + FXAA |
 | Window | 1280×720, stretch `expand`, camera reframes on resize |
@@ -34,6 +34,7 @@ scenes/
   raiden-shogun.tscn      Character + look applicator + spin
 scripts/
   ApplyCharacterLook.cs   Opt-in look applicator
+  CharacterMaskPass.cs    Half-res character coverage for outline compositor
   ToonOutlineCompositorEffect.cs  Post-process outline / edge highlight
   SpinY.cs                Demo turntable (rotates parent)
   FrameCharacterCamera.cs Auto-frames target on load/resize
@@ -46,7 +47,7 @@ scripts/
 shaders/
   genshin_toon.gdshader   Cel shading / rim / specular
   genshin_outline.gdshader Inverted-hull outline
-  toon_outline.glsl       Compositor compute (depth Sobel)
+  toon_outline.glsl       Compositor compute (depth Sobel + character mask)
 ```
 
 ## How to run
@@ -62,7 +63,7 @@ The shader does **not** auto-apply to every mesh in the scene.
 2. Fill ordered `LookSlot`s: name/texture wildcards, which `ToonPreset`, outline / double-sided flags.
 3. Instance your model (GLB/glTF, etc.).
 4. On the model root, attach `scripts/ApplyCharacterLook.cs` and assign the look.
-5. Optionally tune `OutlineWidthScale` on the applicator (demo uses `2.0`).
+5. Optionally tune `OutlineWidthScale` on the applicator (demo uses `1.8`).
 6. Run the scene. On `_Ready()`, the script walks all child `MeshInstance3D` nodes and replaces surface materials.
 
 To **exclude** a model, simply do not attach the script (or set `ApplyOnReady = false`).
@@ -93,7 +94,9 @@ Spatial shader, opaque depth write. Rasterizer is `cull_disabled`; solid parts s
 
 - Samples albedo texture × color.
 - Optional alpha cutout via `discard` (off by default).
-- Soft ambient fill through `EMISSION` (kept low to avoid wash-out).
+- Soft ambient fill through `EMISSION`. With `ambient_max_blend = 1` (default),
+  the light path subtracts that floor from direct so a single key approximates
+  `albedo * max(indirect, direct)` instead of washing both bands.
 - If `double_sided` is false, non-front faces are discarded so thin volumes (hands, feet) do not read as hollow.
 
 **Light**
@@ -133,12 +136,13 @@ For each surface:
 
 | Slot | Typical match | Notes |
 | --- | --- | --- |
-| Face | `*face*`, `*eye*`, `*teeth*`, `*2_0.png`, `*gltf_embedded_0*` | Warm terminator, face shadow map, double-sided, **no outline** |
+| Face | `*face*`, `*eye*`, `*teeth*`, `*2_0.png`, `*gltf_embedded_0*` | Warm terminator, face shadow map, double-sided, **no outline**, excluded from outline mask |
 | Weapon | `*katana*`, `*2_5.png`, `*gltf_embedded_5*` | Blinn-Phong metal, double-sided, **no outline** |
-| Metal | `*acc*` (before Hair so `Hair_Accs` matches) | Tight Phong (half-vector gradient available, flag off), outline on |
+| HairAccessory | `*hair_accs*` (before Metal) | Hair preset + highlight mask (was incorrectly metal) |
+| Metal | `*accs*` / `*acc*` | Tight Phong (half-vector gradient available, flag off), outline on |
 | Hair | `*hair*`, `*2_1.png`, `*gltf_embedded_1*` | Cool shadow, highlight mask (Kajiya-Kay fallback), double-sided |
 | Dress | `*dress*` | Cloth preset, double-sided |
-| Body | `*body*` | Cloth preset, `OutlineDepthBias = 0.003` |
+| Body | `*body*`, `*2_2*`, `*2_4*` | Cloth preset, `OutlineDepthBias = 0.003` |
 | Fallback | everything else | Cloth preset, outline on |
 
 Face and weapon skip the inverted hull on purpose. A hull on the head shell becomes a dark oval over the forehead; a hull on the thin blade reads as a hollow sword.
@@ -150,12 +154,17 @@ Shared presets live under `materials/presets/` (`face`, `hair`, `cloth`, `metal`
 **On the apply script (inspector)**
 
 - `Look` — `CharacterLook` resource
-- `OutlineWidthScale` — multiplies each slot’s outline width (demo uses `2.0`)
+- `OutlineWidthScale` — multiplies each slot’s outline width (demo uses `1.8`)
 - `ApplyOnReady` — auto-apply when the node enters the tree
+- `LogSlotResolution` — print mesh → slot / preset / maps during apply
+- `CharacterMaskLayer` — render layer bit for outline compositor masking
+- `HeadNodePath` / `HeadBoneName` — face-map head axes (Marker3D or Skeleton3D bone)
 
 **On the CharacterLook / LookSlot**
 
 - Slot wildcards, preset reference, `EnableOutline`, `DoubleSided`, `OutlineDepthBias`
+- `IncludeInOutlineMask` — place matching meshes on the character mask layer (face off)
+- Face orientation: `FaceYawOffsetDegrees`, `FaceForwardFlip`, `FaceSwapSides`, `FaceMirrorAxis`
 - Optional maps: `FaceShadowTex`, `HairHighlightTex`, `ControlTex`, `DetailNormalTex`
 - Global `OutlineTint` / `OutlineDarken` / `OutlineSaturation`
 - `MeshLodBias` / `TextureLodBias`
@@ -167,7 +176,7 @@ Shared presets live under `materials/presets/` (`face`, `hair`, `cloth`, `metal`
 - `OuterShadowStrength` / offset / smoothness / color — second terminator band
 - `DitherStrength` / `DitherScale` — ordered Bayer on the terminator only
 - `CastShadowSoftness` — how the shadow map blends into the cel band
-- `LightIntensity` / `AmbientStrength`
+- `LightIntensity` / `AmbientStrength` / `AmbientMaxBlend` — 0 additive ambient, 1 URP-like max floor
 - `RimStrength` / `SpecularStrength`
 - `HairHighlightBlend` / `HairHighlightFresnel` — mask vs Kajiya-Kay mix and silhouette suppress
 - `UseMetallicGradient` / `MetallicGradientTex` / `MetallicStrength` — 1D half-vector gold ramp (opt-in; off on Raiden metal)
@@ -182,7 +191,7 @@ Shared presets live under `materials/presets/` (`face`, `hair`, `cloth`, `metal`
 
 - One directional sun, Orthogonal shadows, max distance `14`, atlas `8192`, Ultra filter.
 - PCSS (`light_angular_distance`) stays at `0` so the contact shadow does not crawl while the model rotates.
-- Filmic tonemap (`tonemap_mode = 2`), exposure `1.0`, glow off, slight `adjustment_saturation` (`1.1`) so cel bands stay poster-colored rather than grey. Phase 3 A/B (Linear / Reinhardt / Filmic / ACES / AGX) locked Filmic + sat `1.1`; GT compositor skipped. Fog stays at density `0.0012` (denser wraps milk the dress terminator).
+- Filmic tonemap (`tonemap_mode = 2`); exposure and glow use engine defaults unless overridden. Slight `adjustment_saturation` (`1.1`) so cel bands stay poster-colored rather than grey. Phase 3 A/B locked Filmic + sat `1.1`; GT compositor skipped. Fog stays at density `0.0012` (denser wraps milk the dress terminator).
 
 ## Display / AA
 
@@ -201,7 +210,7 @@ The demo camera listens to viewport `SizeChanged` and reframes the character.
 - Opt-in by design: you choose which roots get the applicator + which look resource.
 - Matching is still name/path based in the look table — the heuristics moved out of code into data.
 - Very thin lace/alpha hair may need a dedicated cutout pass later; cutout is currently disabled globally to protect depth.
-- Hull outline is per-mesh; the compositor (default on) adds screen-space depth edges (silhouette + occlusions). Hair/cloth/metal keep the hull for purple-tinted lines.
+- Hull outline is per-mesh; the compositor (default on) adds character-masked screen-space depth edges. Hair/cloth/metal keep the hull for purple-tinted lines; face is excluded from the outline mask so internal face edges stay quiet.
 - Face and weapon skip the hull. Do not write `DEPTH` from `genshin_toon.gdshader` — a fragment depth write disables MSAA coverage and stipples the whole character.
 - Terminator dither is ordered Bayer on `shade` only (hair/cloth). It does not touch albedo. Face/metal/weapon stay at strength `0`.
 - Metallic half-vector ramp exists under `materials/textures/`; Raiden’s metal/weapon presets keep Phong (`UseMetallicGradient` off).
