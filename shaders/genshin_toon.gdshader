@@ -17,9 +17,11 @@ group_uniforms CelShading;
 uniform vec4 shadow_color : source_color = vec4(0.62, 0.55, 0.78, 1.0);
 // Lit-band tint. White = today's albedo × light look; warm/cool tints both bands.
 uniform vec4 lit_color : source_color = vec4(1.0);
+// Terminator in the wrapped N·L domain. With light_wrap 0.5 that domain is
+// Half-Lambert [0, 1] where threshold = (signed_terminator + 1) / 2.
 uniform float shadow_threshold : hint_range(0.0, 1.0) = 0.5;
 uniform float shadow_smoothness : hint_range(0.001, 0.35) = 0.04;
-// 0 = raw NdotL, 0.5 = Half-Lambert (current default).
+// Remap of signed N·L: mix(raw, 1, wrap). 0.5 = Half-Lambert.
 uniform float light_wrap : hint_range(0.0, 1.0) = 0.5;
 // false = two-sided step around threshold (old look); true = one-sided Genshin-style step.
 uniform bool use_one_sided_step = false;
@@ -66,9 +68,14 @@ uniform float rim_power : hint_range(0.5, 8.0) = 4.0;
 uniform float rim_strength : hint_range(0.0, 1.0) = 0.18;
 
 group_uniforms ExtraMaps;
-// R/G face lightmap (data, not sRGB). Off = mesh NdotL.
+// Single-channel face lightmap in R (data, not sRGB). Sampled with mirrored UV
+// when the light is on the left. Off = mesh NdotL.
 uniform sampler2D face_shadow_tex : filter_linear, repeat_disable;
 uniform bool use_face_shadow = false;
+// Horizontal UV symmetry axis of the face island (0.5 = centered).
+uniform float face_mirror_axis : hint_range(0.0, 1.0) = 0.5;
+// Softness for face map comparison. Independent of body shadow_smoothness.
+uniform float face_shadow_softness : hint_range(0.001, 0.35) = 0.04;
 uniform vec3 head_forward = vec3(0.0, 0.0, 1.0);
 uniform vec3 head_right = vec3(1.0, 0.0, 0.0);
 uniform vec3 head_position = vec3(0.0);
@@ -86,6 +93,14 @@ uniform float hair_highlight_blend : hint_range(0.0, 1.0) = 1.0;
 uniform float hair_highlight_fresnel : hint_range(0.5, 8.0) = 5.0;
 uniform sampler2D detail_normal_tex : hint_normal, filter_linear_mipmap, repeat_disable;
 uniform bool use_detail_normal = false;
+
+group_uniforms Debug;
+// 0 = production. Non-zero replaces lighting with a raw diagnostic signal:
+// 1 signed N·L (as 0.5*raw+0.5), 2 wrapped N·L, 3 shade, 4 cast_shade,
+// 5 face map value, 6 face angular threshold, 7 slot ID palette.
+uniform int debug_view : hint_range(0, 7) = 0;
+// Slot index uploaded per material so mismatched presets are visible.
+uniform float debug_slot_id : hint_range(0.0, 8.0) = 0.0;
 
 // Passed fragment → light (TANGENT/BINORMAL/UV/FRAGCOORD are not available inside light()).
 varying vec3 v_tangent;
@@ -134,20 +149,57 @@ void fragment() {
 	// Gentle flat fill — keep this low so lit areas are not washed out.
 	EMISSION = ALBEDO * ambient_color.rgb * ambient_strength;
 
+	// Debug views need a clean signal: albedo multiplies DIFFUSE_LIGHT and
+	// ambient emission would wash grayscale diagnostics.
+	if (debug_view != 0) {
+		ALBEDO = vec3(1.0);
+		EMISSION = vec3(0.0);
+	}
+
 	// Do not write DEPTH in this shader. A conditional DEPTH assignment still
 	// disables early-Z / MSAA coverage and stipples every mesh that shares
 	// genshin_toon (ground, cloth, hair). Face inner-ink is suppressed by the
 	// compositor's relative depth threshold instead.
 }
 
+vec3 slot_debug_color(float slot_id) {
+	int id = int(slot_id + 0.5);
+	if (id == 0) {
+		return vec3(1.0, 0.2, 0.2);
+	}
+	if (id == 1) {
+		return vec3(1.0, 0.7, 0.15);
+	}
+	if (id == 2) {
+		return vec3(0.95, 0.95, 0.2);
+	}
+	if (id == 3) {
+		return vec3(0.25, 0.85, 0.3);
+	}
+	if (id == 4) {
+		return vec3(0.25, 0.7, 1.0);
+	}
+	if (id == 5) {
+		return vec3(0.65, 0.35, 1.0);
+	}
+	if (id == 6) {
+		return vec3(1.0, 0.4, 0.85);
+	}
+	return vec3(0.55, 0.55, 0.55);
+}
+
 void light() {
 	float soft = max(shadow_smoothness, 0.001);
+	float face_soft = max(face_shadow_softness, 0.001);
 	float wrap_ndl;
 	float ndl_shade;
+	float signed_ndl = dot(NORMAL, LIGHT);
+	float face_map_value = 0.0;
+	float face_angle = 0.0;
 
 	if (use_face_shadow) {
-		// Genshin face lightmap: head XZ vs light XZ → sample R (0–180°) or G (180–360°).
-		// LIGHT is view-space; convert to world for dots with script head axes.
+		// URP-compatible face lightmap: one directional gradient in R, mirrored
+		// by light side. LIGHT is view-space; convert to world for head axes.
 		vec3 light_world = normalize((INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).xyz);
 		vec2 light_xz = normalize(light_world.xz);
 		vec2 forward_xz = normalize(head_forward.xz);
@@ -155,23 +207,24 @@ void light() {
 
 		float dot_f = dot(forward_xz, light_xz);
 		float dot_r = clamp(dot(right_xz, light_xz), -1.0, 1.0);
-		float front = smoothstep(-soft, soft, dot_f);
+		float front = smoothstep(-face_soft, face_soft, dot_f);
 
 		// acos/PI*2 ∈ [0,2]. Remap so front ≈ 0 and side ≈ 1: lit when map > angle.
 		float dot_r_acos = (acos(dot_r) / PI) * 2.0;
-		float dot_r_acos_dir = (dot_r < 0.0) ? (dot_r_acos - 1.0) : (1.0 - dot_r_acos);
+		face_angle = (dot_r < 0.0) ? (dot_r_acos - 1.0) : (1.0 - dot_r_acos);
 
-		vec2 map_rg = texture(face_shadow_tex, v_uv).rg;
-		float tex_shadow_dir = (dot_r < 0.0) ? map_rg.g : map_rg.r;
+		vec2 face_uv = vec2(2.0 * face_mirror_axis - v_uv.x, v_uv.y);
+		vec2 sample_uv = (dot_r < 0.0) ? face_uv : v_uv;
+		face_map_value = texture(face_shadow_tex, sample_uv).r;
 
 		// Soft comparison against the painted SDF instead of a hard step.
-		ndl_shade = smoothstep(-soft, soft, tex_shadow_dir - dot_r_acos_dir) * front;
+		ndl_shade = smoothstep(-face_soft, face_soft, face_map_value - face_angle) * front;
 		// Outer band uses the map value as its "wrap" source so strength 0 still no-ops.
-		wrap_ndl = tex_shadow_dir;
+		wrap_ndl = face_map_value;
 	} else {
-		float n_dot_l = clamp(dot(NORMAL, LIGHT), 0.0, 1.0);
-		// light_wrap 0.5 == mix(n, 1, 0.5) == Half-Lambert (bit-identical to old path).
-		wrap_ndl = mix(n_dot_l, 1.0, light_wrap);
+		// Signed [-1, 1]. Clamping here pinned every back-facing pixel to light_wrap,
+		// which equals the threshold on hair and cloth and froze them at half shade.
+		wrap_ndl = mix(signed_ndl, 1.0, light_wrap);
 
 		ndl_shade = use_one_sided_step
 			? smoothstep(0.0, soft, wrap_ndl - shadow_threshold)
@@ -194,65 +247,86 @@ void light() {
 	float dither = (bayer4(v_fragcoord * dither_scale) - 0.5) * dither_strength * dither_band;
 	shade = clamp(shade + dither, 0.0, 1.0);
 
-	// Second NdotL cut inset into the shadow: a narrow tinted stripe at the
-	// terminator. Strength 0 leaves main_term alone (today's single band).
-	// Outer band stays two-sided around the offset threshold (not one-sided).
-	float outer_soft = max(outer_shadow_smoothness, 0.001);
-	float outer_threshold = shadow_threshold - outer_shadow_offset;
-	float shade_outer = smoothstep(outer_threshold - outer_soft, outer_threshold + outer_soft, wrap_ndl);
-	shade_outer = min(shade_outer, cast_shade);
-
-	vec3 main_term = mix(shadow_color.rgb, lit_color.rgb, shade);
-	float outer_band = (1.0 - shade) * shade_outer;
-	vec3 lit_term = mix(main_term, outer_shadow_color.rgb, outer_band * outer_shadow_strength);
-	DIFFUSE_LIGHT += lit_term * LIGHT_COLOR * light_intensity;
-
-	vec3 half_dir = normalize(VIEW + LIGHT);
-
-	if (use_metallic_gradient) {
-		// 1D matcap-style band: dark → gold → white core along N·H.
-		float u = clamp(dot(NORMAL, half_dir), 0.0, 1.0);
-		vec3 grad = texture(metallic_gradient_tex, vec2(u, 0.5)).rgb;
-		SPECULAR_LIGHT += grad * metallic_strength * shade * LIGHT_COLOR;
+	if (debug_view != 0) {
+		vec3 signal = vec3(0.0);
+		if (debug_view == 1) {
+			signal = vec3(signed_ndl * 0.5 + 0.5);
+		} else if (debug_view == 2) {
+			signal = vec3(wrap_ndl);
+		} else if (debug_view == 3) {
+			signal = vec3(shade);
+		} else if (debug_view == 4) {
+			signal = vec3(cast_shade);
+		} else if (debug_view == 5) {
+			signal = vec3(face_map_value);
+		} else if (debug_view == 6) {
+			signal = vec3(face_angle);
+		} else if (debug_view == 7) {
+			signal = slot_debug_color(debug_slot_id);
+		}
+		DIFFUSE_LIGHT = signal;
+		SPECULAR_LIGHT = vec3(0.0);
 	} else {
-		float spec = 0.0;
+		// Second NdotL cut inset into the shadow: a narrow tinted stripe at the
+		// terminator. Strength 0 leaves main_term alone (today's single band).
+		// Outer band stays two-sided around the offset threshold (not one-sided).
+		float outer_soft = max(outer_shadow_smoothness, 0.001);
+		float outer_threshold = shadow_threshold - outer_shadow_offset;
+		float shade_outer = smoothstep(outer_threshold - outer_soft, outer_threshold + outer_soft, wrap_ndl);
+		shade_outer = min(shade_outer, cast_shade);
 
-		if (use_anisotropic_specular) {
-			// Strand direction: prefer BINORMAL (UV.v flow on most hair cards).
-			vec3 strand = normalize(mix(v_tangent, v_binormal, hair_flow_blend));
+		vec3 main_term = mix(shadow_color.rgb, lit_color.rgb, shade);
+		float outer_band = (1.0 - shade) * shade_outer;
+		vec3 lit_term = mix(main_term, outer_shadow_color.rgb, outer_band * outer_shadow_strength);
+		DIFFUSE_LIGHT += lit_term * LIGHT_COLOR * light_intensity;
 
-			vec3 t1 = normalize(strand + NORMAL * hair_spec_shift);
-			float t1h = clamp(dot(t1, half_dir), -1.0, 1.0);
-			float sin1 = sqrt(max(1.0 - t1h * t1h, 0.0));
-			float primary = pow(sin1, specular_size);
+		vec3 half_dir = normalize(VIEW + LIGHT);
 
-			vec3 t2 = normalize(strand + NORMAL * hair_spec_secondary_shift);
-			float t2h = clamp(dot(t2, half_dir), -1.0, 1.0);
-			float sin2 = sqrt(max(1.0 - t2h * t2h, 0.0));
-			float secondary = pow(sin2, hair_spec_secondary_size) * hair_spec_secondary;
-
-			// Soft anime bands — avoid hardstep which reintroduces plastic edges.
-			float spec_soft = max(specular_smoothness, 0.001);
-			float band = smoothstep(0.35 - spec_soft, 0.35 + spec_soft, primary + secondary);
-			spec = band * shade;
+		if (use_metallic_gradient) {
+			// 1D matcap-style band: dark → gold → white core along N·H.
+			float u = clamp(dot(NORMAL, half_dir), 0.0, 1.0);
+			vec3 grad = texture(metallic_gradient_tex, vec2(u, 0.5)).rgb;
+			SPECULAR_LIGHT += grad * metallic_strength * shade * LIGHT_COLOR;
 		} else {
-			float spec_raw = pow(clamp(dot(NORMAL, half_dir), 0.0, 1.0), specular_size);
-			spec = smoothstep(0.5 - specular_smoothness, 0.5 + specular_smoothness, spec_raw) * shade;
+			float spec = 0.0;
+
+			if (use_anisotropic_specular) {
+				// Strand direction: prefer BINORMAL (UV.v flow on most hair cards).
+				vec3 strand = normalize(mix(v_tangent, v_binormal, hair_flow_blend));
+
+				vec3 t1 = normalize(strand + NORMAL * hair_spec_shift);
+				float t1h = clamp(dot(t1, half_dir), -1.0, 1.0);
+				float sin1 = sqrt(max(1.0 - t1h * t1h, 0.0));
+				float primary = pow(sin1, specular_size);
+
+				vec3 t2 = normalize(strand + NORMAL * hair_spec_secondary_shift);
+				float t2h = clamp(dot(t2, half_dir), -1.0, 1.0);
+				float sin2 = sqrt(max(1.0 - t2h * t2h, 0.0));
+				float secondary = pow(sin2, hair_spec_secondary_size) * hair_spec_secondary;
+
+				// Soft anime bands — avoid hardstep which reintroduces plastic edges.
+				float spec_soft = max(specular_smoothness, 0.001);
+				float band = smoothstep(0.35 - spec_soft, 0.35 + spec_soft, primary + secondary);
+				spec = band * shade;
+			} else {
+				float spec_raw = pow(clamp(dot(NORMAL, half_dir), 0.0, 1.0), specular_size);
+				spec = smoothstep(0.5 - specular_smoothness, 0.5 + specular_smoothness, spec_raw) * shade;
+			}
+
+			// Painted streak replaces (or mixes with) Kajiya-Kay when a mask is bound.
+			if (use_hair_highlight) {
+				float spec_mask = texture(hair_highlight_tex, v_uv).r;
+				float hl_fresnel = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), hair_highlight_fresnel);
+				float mask_spec = spec_mask * shade * (1.0 - hl_fresnel);
+				spec = mix(spec, mask_spec, hair_highlight_blend);
+			}
+
+			SPECULAR_LIGHT += specular_color.rgb * spec * specular_strength * LIGHT_COLOR;
 		}
 
-		// Painted streak replaces (or mixes with) Kajiya-Kay when a mask is bound.
-		if (use_hair_highlight) {
-			float spec_mask = texture(hair_highlight_tex, v_uv).r;
-			float hl_fresnel = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), hair_highlight_fresnel);
-			float mask_spec = spec_mask * shade * (1.0 - hl_fresnel);
-			spec = mix(spec, mask_spec, hair_highlight_blend);
-		}
-
-		SPECULAR_LIGHT += specular_color.rgb * spec * specular_strength * LIGHT_COLOR;
+		float fresnel = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), rim_power);
+		// Additive rim fights hair-mask Fresnel suppress — gate it when the mask drives spec.
+		float rim_gate = 1.0 - (use_hair_highlight ? hair_highlight_blend : 0.0);
+		SPECULAR_LIGHT += rim_color.rgb * fresnel * rim_strength * shade * LIGHT_COLOR * rim_gate;
 	}
-
-	float fresnel = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), rim_power);
-	// Additive rim fights hair-mask Fresnel suppress — gate it when the mask drives spec.
-	float rim_gate = 1.0 - (use_hair_highlight ? hair_highlight_blend : 0.0);
-	SPECULAR_LIGHT += rim_color.rgb * fresnel * rim_strength * shade * LIGHT_COLOR * rim_gate;
 }

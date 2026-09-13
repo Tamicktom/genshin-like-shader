@@ -73,6 +73,8 @@ public static class ShaderParams
 	//* Extra maps (LookSlot; missing tex = old path)
 	public const string FaceShadowTex = "face_shadow_tex";
 	public const string UseFaceShadow = "use_face_shadow";
+	public const string FaceMirrorAxis = "face_mirror_axis";
+	public const string FaceShadowSoftness = "face_shadow_softness";
 	public const string HeadForward = "head_forward";
 	public const string HeadRight = "head_right";
 	public const string HeadPosition = "head_position";
@@ -84,4 +86,8 @@ public static class ShaderParams
 	public const string HairHighlightFresnel = "hair_highlight_fresnel";
 	public const string DetailNormalTex = "detail_normal_tex";
 	public const string UseDetailNormal = "use_detail_normal";
+
+	//* Debug diagnostics (0 = production)
+	public const string DebugView = "debug_view";
+	public const string DebugSlotId = "debug_slot_id";
 }

@@ -23,6 +23,7 @@ EnableOutline = false
 FlattenOutlineDepth = true
 OutlineDepthFlatten = 0.85
 FaceShadowTex = ExtResource("10_faceshadow")
+FaceMirrorAxis = 0.5
 
 [sub_resource type="Resource" id="slot_weapon"]
 script = ExtResource("2_slot")

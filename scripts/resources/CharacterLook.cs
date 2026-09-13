@@ -1,4 +1,5 @@
 //* Libraries imports
+using System;
 using Godot;
 using Godot.Collections;
 
@@ -18,7 +19,9 @@ public readonly struct ResolvedLookSlot
 	public bool FlattenOutlineDepth { get; init; }
 	public float OutlineDepthFlatten { get; init; }
 	public string SlotName { get; init; }
+	public int SlotIndex { get; init; }
 	public Texture2D FaceShadowTex { get; init; }
+	public float FaceMirrorAxis { get; init; }
 	public Texture2D ControlTex { get; init; }
 	public Texture2D HairHighlightTex { get; init; }
 	public Texture2D DetailNormalTex { get; init; }
@@ -86,8 +89,9 @@ public partial class CharacterLook : Resource
 
 	public ResolvedLookSlot ResolveSlot(string meshName, string texturePath)
 	{
-		foreach (LookSlot slot in Slots)
+		for (int slotIndex = 0; slotIndex < Slots.Count; slotIndex++)
 		{
+			LookSlot slot = Slots[slotIndex];
 			if (slot == null)
 			{
 				continue;
@@ -105,7 +109,9 @@ public partial class CharacterLook : Resource
 					FlattenOutlineDepth = slot.FlattenOutlineDepth,
 					OutlineDepthFlatten = slot.OutlineDepthFlatten,
 					SlotName = slot.SlotName,
+					SlotIndex = slotIndex,
 					FaceShadowTex = slot.FaceShadowTex,
+					FaceMirrorAxis = slot.FaceMirrorAxis,
 					ControlTex = slot.ControlTex,
 					HairHighlightTex = slot.HairHighlightTex,
 					DetailNormalTex = slot.DetailNormalTex,
@@ -123,7 +129,9 @@ public partial class CharacterLook : Resource
 			FlattenOutlineDepth = false,
 			OutlineDepthFlatten = 0.0f,
 			SlotName = "fallback",
+			SlotIndex = Math.Max(Slots.Count, 0),
 			FaceShadowTex = null,
+			FaceMirrorAxis = 0.5f,
 			ControlTex = null,
 			HairHighlightTex = null,
 			DetailNormalTex = null,

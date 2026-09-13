@@ -7,6 +7,7 @@ using Godot.Collections;
 
 /// <summary>
 /// Places the camera so the target character fills the view, including on resize.
+/// Optional focus mode frames a height band (e.g. face close-up) instead of the full AABB.
 /// </summary>
 public partial class FrameCharacterCamera : Camera3D
 {
@@ -24,6 +25,25 @@ public partial class FrameCharacterCamera : Camera3D
 
 	[Export]
 	public float PitchDegrees { get; set; } = -8.0f;
+
+	/// <summary>
+	/// When true, frame a focus sphere instead of the full character AABB.
+	/// </summary>
+	[Export]
+	public bool UseFocus { get; set; }
+
+	/// <summary>
+	/// Fraction of AABB height used as focus center (0 = feet, 1 = top).
+	/// Face is typically around 0.88–0.92 for biped characters.
+	/// </summary>
+	[Export(PropertyHint.Range, "0.0,1.0")]
+	public float FocusHeightFraction { get; set; } = 0.9f;
+
+	/// <summary>
+	/// World-space radius of the focus framing sphere.
+	/// </summary>
+	[Export(PropertyHint.Range, "0.01,5.0")]
+	public float FocusRadius { get; set; } = 0.18f;
 
 	public override void _Ready()
 	{
@@ -45,7 +65,7 @@ public partial class FrameCharacterCamera : Camera3D
 		FrameTarget();
 	}
 
-	private void FrameTarget()
+	public void FrameTarget()
 	{
 		Node target = GetNodeOrNull(TargetPath);
 		if (target == null)
@@ -59,8 +79,19 @@ public partial class FrameCharacterCamera : Camera3D
 			return;
 		}
 
-		Vector3 center = bounds.GetCenter() + new Vector3(0.0f, bounds.Size.Y * HeightBias, 0.0f);
-		float radius = bounds.Size.Length() * 0.5f * Padding;
+		Vector3 center;
+		float radius;
+		if (UseFocus)
+		{
+			float focusY = bounds.Position.Y + bounds.Size.Y * FocusHeightFraction;
+			center = new Vector3(bounds.GetCenter().X, focusY, bounds.GetCenter().Z);
+			radius = Mathf.Max(FocusRadius, 0.01f);
+		}
+		else
+		{
+			center = bounds.GetCenter() + new Vector3(0.0f, bounds.Size.Y * HeightBias, 0.0f);
+			radius = bounds.Size.Length() * 0.5f * Padding;
+		}
 
 		// Account for viewport aspect so the character stays framed when resizing.
 		Vector2 viewportSize = GetViewport().GetVisibleRect().Size;

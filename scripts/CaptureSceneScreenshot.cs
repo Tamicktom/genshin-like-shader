@@ -13,7 +13,9 @@ using Godot;
 /// <c>--face-ab</c> toggles face-shadow map vs NdotL;
 /// <c>--hair-ab</c> toggles hair highlight mask vs Kajiya-Kay;
 /// <c>--outline-ab</c> cycles compositor outline debug / final modes;
-/// <c>--dither-ab</c> toggles terminator Bayer dither off vs on (hair/cloth).
+/// <c>--dither-ab</c> toggles terminator Bayer dither off vs on (hair/cloth);
+/// <c>--debug-ab</c> cycles shader debug views 0–7 under a neutral grade;
+/// <c>--face-yaw</c> face close-up light-yaw sweep with final + face debug views.
 /// </summary>
 public partial class CaptureSceneScreenshot : Node
 {
@@ -52,6 +54,8 @@ public partial class CaptureSceneScreenshot : Node
 		HairAb,
 		OutlineAb,
 		DitherAb,
+		DebugAb,
+		FaceYaw,
 	}
 
 	private SweepKind _sweep;
@@ -60,11 +64,18 @@ public partial class CaptureSceneScreenshot : Node
 	private List<FlagShot> _flagShots;
 	private List<OutlineShot> _outlineShots;
 	private List<DitherShot> _ditherShots;
+	private List<DebugShot> _debugShots;
+	private List<FaceYawShot> _faceYawShots;
 	private List<(ShaderMaterial Material, float SavedStrength)> _ditherTargets;
+	private List<ShaderMaterial> _debugMaterials;
 	private int _shotIndex;
 	private float _savedSaturation = 1.1f;
 	private float _savedFogDensity = 0.0012f;
 	private bool _savedFogEnabled = true;
+	private Godot.Environment.ToneMapper _savedTonemapMode;
+	private bool _savedGlowEnabled;
+	private float _savedTonemapExposure = 1.0f;
+	private float _savedTonemapWhite = 1.0f;
 	private bool _shotApplied;
 	private List<ShaderMaterial> _flagMaterials;
 	private string _flagUseParam;
@@ -74,6 +85,16 @@ public partial class CaptureSceneScreenshot : Node
 	private bool _savedOutlineEnabled;
 	private float _savedHighlightStrength;
 	private ToonOutlineCompositorEffect.OutlineDebugMode _savedDebugMode;
+	private DirectionalLight3D _sun;
+	private Transform3D _savedSunTransform;
+	private Node3D _characterRoot;
+	private Transform3D _savedCharacterTransform;
+	private FrameCharacterCamera _camera;
+	private bool _savedUseFocus;
+	private float _savedFocusHeightFraction;
+	private float _savedFocusRadius;
+	private float _savedYawDegrees;
+	private float _savedPitchDegrees;
 
 	private readonly struct EnvShot
 	{
@@ -142,6 +163,32 @@ public partial class CaptureSceneScreenshot : Node
 		public bool Enabled { get; }
 	}
 
+	private readonly struct DebugShot
+	{
+		public DebugShot(string fileName, int debugView)
+		{
+			FileName = fileName;
+			DebugView = debugView;
+		}
+
+		public string FileName { get; }
+		public int DebugView { get; }
+	}
+
+	private readonly struct FaceYawShot
+	{
+		public FaceYawShot(string fileName, float yawDegrees, int debugView)
+		{
+			FileName = fileName;
+			YawDegrees = yawDegrees;
+			DebugView = debugView;
+		}
+
+		public string FileName { get; }
+		public float YawDegrees { get; }
+		public int DebugView { get; }
+	}
+
 	public override void _Ready()
 	{
 		if (!Enabled)
@@ -194,6 +241,20 @@ public partial class CaptureSceneScreenshot : Node
 			_shotIndex = 0;
 			_shotApplied = false;
 		}
+		else if (HasUserArg("--debug-ab"))
+		{
+			_sweep = SweepKind.DebugAb;
+			_debugShots = BuildDebugShots();
+			_shotIndex = 0;
+			_shotApplied = false;
+		}
+		else if (HasUserArg("--face-yaw"))
+		{
+			_sweep = SweepKind.FaceYaw;
+			_faceYawShots = BuildFaceYawShots();
+			_shotIndex = 0;
+			_shotApplied = false;
+		}
 		else
 		{
 			_sweep = SweepKind.None;
@@ -224,6 +285,18 @@ public partial class CaptureSceneScreenshot : Node
 		if (_sweep == SweepKind.DitherAb)
 		{
 			ProcessDitherSweep();
+			return;
+		}
+
+		if (_sweep == SweepKind.DebugAb)
+		{
+			ProcessDebugSweep();
+			return;
+		}
+
+		if (_sweep == SweepKind.FaceYaw)
+		{
+			ProcessFaceYawSweep();
 			return;
 		}
 
@@ -500,6 +573,333 @@ public partial class CaptureSceneScreenshot : Node
 		}
 	}
 
+	private void ProcessDebugSweep()
+	{
+		if (_debugShots == null || _shotIndex >= _debugShots.Count)
+		{
+			RestoreDebugSweep();
+			SetProcess(false);
+			GetTree().Quit();
+			return;
+		}
+
+		if (!IsSceneReady())
+		{
+			return;
+		}
+
+		if (_debugMaterials == null)
+		{
+			if (!BeginNeutralDebugCapture())
+			{
+				return;
+			}
+
+			_debugMaterials = CollectToonMaterials(this);
+			if (_debugMaterials.Count == 0)
+			{
+				GD.PushError("capture_scene_screenshot: debug-ab found no toon ShaderMaterials");
+				RestoreDebugSweep();
+				SetProcess(false);
+				GetTree().Quit();
+				return;
+			}
+
+			FreezeSpin(GetNodeOrNull(RequiredNodePath));
+		}
+
+		if (!_shotApplied)
+		{
+			ApplyDebugView(_debugShots[_shotIndex].DebugView);
+			_shotApplied = true;
+			_waitingForSettle = true;
+			_settleCount = 0;
+			return;
+		}
+
+		_settleCount++;
+		if (_settleCount < SettleFrames)
+		{
+			return;
+		}
+
+		DebugShot done = _debugShots[_shotIndex];
+		CaptureOnce(done.FileName);
+		GD.Print($"capture_scene_screenshot: debug-ab {_shotIndex + 1}/{_debugShots.Count} -> {done.FileName}");
+
+		_shotIndex++;
+		_shotApplied = false;
+		_waitingForSettle = false;
+		_settleCount = 0;
+
+		if (_shotIndex >= _debugShots.Count)
+		{
+			RestoreDebugSweep();
+			SetProcess(false);
+			GetTree().Quit();
+		}
+	}
+
+	private void ProcessFaceYawSweep()
+	{
+		if (_faceYawShots == null || _shotIndex >= _faceYawShots.Count)
+		{
+			RestoreFaceYawSweep();
+			SetProcess(false);
+			GetTree().Quit();
+			return;
+		}
+
+		if (!IsSceneReady())
+		{
+			return;
+		}
+
+		if (_debugMaterials == null)
+		{
+			if (!BeginNeutralDebugCapture())
+			{
+				return;
+			}
+
+			_characterRoot = GetNodeOrNull<Node3D>(RequiredNodePath);
+			if (_characterRoot == null)
+			{
+				GD.PushError("capture_scene_screenshot: face-yaw needs character root");
+				RestoreFaceYawSweep();
+				SetProcess(false);
+				GetTree().Quit();
+				return;
+			}
+
+			_savedCharacterTransform = _characterRoot.GlobalTransform;
+			// Zero yaw only — keep the demo's 0.1 scale and translation.
+			_characterRoot.Rotation = Vector3.Zero;
+
+			_sun = GetNodeOrNull<DirectionalLight3D>("Sun");
+			if (_sun == null)
+			{
+				GD.PushError("capture_scene_screenshot: face-yaw needs Sun DirectionalLight3D");
+				RestoreFaceYawSweep();
+				SetProcess(false);
+				GetTree().Quit();
+				return;
+			}
+
+			_savedSunTransform = _sun.GlobalTransform;
+			_debugMaterials = CollectToonMaterials(this);
+			FreezeSpin(_characterRoot);
+
+			_camera = GetNodeOrNull<FrameCharacterCamera>("Camera3D");
+			if (_camera != null)
+			{
+				_savedUseFocus = _camera.UseFocus;
+				_savedFocusHeightFraction = _camera.FocusHeightFraction;
+				_savedFocusRadius = _camera.FocusRadius;
+				_savedYawDegrees = _camera.YawDegrees;
+				_savedPitchDegrees = _camera.PitchDegrees;
+				_camera.UseFocus = true;
+				_camera.FocusHeightFraction = 0.88f;
+				_camera.FocusRadius = 0.22f;
+				_camera.YawDegrees = 8.0f;
+				_camera.PitchDegrees = -2.0f;
+				_camera.FrameTarget();
+			}
+		}
+
+		if (!_shotApplied)
+		{
+			FaceYawShot shot = _faceYawShots[_shotIndex];
+			ApplySunYaw(shot.YawDegrees);
+			ApplyDebugView(shot.DebugView);
+			_shotApplied = true;
+			_waitingForSettle = true;
+			_settleCount = 0;
+			return;
+		}
+
+		_settleCount++;
+		if (_settleCount < SettleFrames)
+		{
+			return;
+		}
+
+		FaceYawShot done = _faceYawShots[_shotIndex];
+		CaptureOnce(done.FileName);
+		GD.Print($"capture_scene_screenshot: face-yaw {_shotIndex + 1}/{_faceYawShots.Count} -> {done.FileName}");
+
+		_shotIndex++;
+		_shotApplied = false;
+		_waitingForSettle = false;
+		_settleCount = 0;
+
+		if (_shotIndex >= _faceYawShots.Count)
+		{
+			RestoreFaceYawSweep();
+			SetProcess(false);
+			GetTree().Quit();
+		}
+	}
+
+	private bool BeginNeutralDebugCapture()
+	{
+		WorldEnvironment world = GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
+		_environment = world?.Environment;
+		if (_environment == null)
+		{
+			GD.PushError("capture_scene_screenshot: debug sweeps need WorldEnvironment.Environment");
+			SetProcess(false);
+			GetTree().Quit();
+			return false;
+		}
+
+		_savedTonemapMode = _environment.TonemapMode;
+		_savedSaturation = _environment.AdjustmentSaturation;
+		_savedFogDensity = _environment.FogDensity;
+		_savedFogEnabled = _environment.FogEnabled;
+		_savedGlowEnabled = _environment.GlowEnabled;
+		_savedTonemapExposure = _environment.TonemapExposure;
+		_savedTonemapWhite = _environment.TonemapWhite;
+
+		_environment.TonemapMode = Godot.Environment.ToneMapper.Linear;
+		_environment.AdjustmentEnabled = true;
+		_environment.AdjustmentSaturation = 1.0f;
+		_environment.FogEnabled = false;
+		_environment.GlowEnabled = false;
+		_environment.TonemapExposure = 1.0f;
+		_environment.TonemapWhite = 1.0f;
+
+		_outlineEffect = FindOutlineEffect();
+		if (_outlineEffect != null)
+		{
+			_savedOutlineEnabled = _outlineEffect.Enabled;
+			_savedHighlightStrength = _outlineEffect.HighlightStrength;
+			_savedDebugMode = _outlineEffect.DebugMode;
+			_outlineEffect.Enabled = false;
+		}
+
+		return true;
+	}
+
+	private void RestoreNeutralEnvironment()
+	{
+		if (_environment != null && GodotObject.IsInstanceValid(_environment))
+		{
+			_environment.TonemapMode = _savedTonemapMode;
+			_environment.AdjustmentSaturation = _savedSaturation;
+			_environment.FogEnabled = _savedFogEnabled;
+			_environment.FogDensity = _savedFogDensity;
+			_environment.GlowEnabled = _savedGlowEnabled;
+			_environment.TonemapExposure = _savedTonemapExposure;
+			_environment.TonemapWhite = _savedTonemapWhite;
+		}
+
+		RestoreOutlineEffect();
+	}
+
+	private void RestoreDebugSweep()
+	{
+		ApplyDebugView(0);
+		RestoreNeutralEnvironment();
+		RestoreSpin();
+	}
+
+	private void RestoreFaceYawSweep()
+	{
+		ApplyDebugView(0);
+		RestoreNeutralEnvironment();
+		RestoreSpin();
+
+		if (_sun != null && GodotObject.IsInstanceValid(_sun))
+		{
+			_sun.GlobalTransform = _savedSunTransform;
+		}
+
+		if (_characterRoot != null && GodotObject.IsInstanceValid(_characterRoot))
+		{
+			_characterRoot.GlobalTransform = _savedCharacterTransform;
+		}
+
+		if (_camera != null && GodotObject.IsInstanceValid(_camera))
+		{
+			_camera.UseFocus = _savedUseFocus;
+			_camera.FocusHeightFraction = _savedFocusHeightFraction;
+			_camera.FocusRadius = _savedFocusRadius;
+			_camera.YawDegrees = _savedYawDegrees;
+			_camera.PitchDegrees = _savedPitchDegrees;
+			_camera.FrameTarget();
+		}
+	}
+
+	private void ApplySunYaw(float yawDegrees)
+	{
+		if (_sun == null || !GodotObject.IsInstanceValid(_sun))
+		{
+			return;
+		}
+
+		_sun.GlobalTransform = new Transform3D(
+			Basis.FromEuler(new Vector3(Mathf.DegToRad(-25.0f), Mathf.DegToRad(yawDegrees), 0.0f)),
+			_sun.GlobalTransform.Origin);
+	}
+
+	private void ApplyDebugView(int debugView)
+	{
+		if (_debugMaterials == null)
+		{
+			return;
+		}
+
+		foreach (ShaderMaterial material in _debugMaterials)
+		{
+			if (material == null || !GodotObject.IsInstanceValid(material))
+			{
+				continue;
+			}
+
+			material.SetShaderParameter(ShaderParams.DebugView, debugView);
+		}
+	}
+
+	private static List<ShaderMaterial> CollectToonMaterials(Node root)
+	{
+		var result = new List<ShaderMaterial>();
+		CollectToonMaterialsRecursive(root, result);
+		return result;
+	}
+
+	private static void CollectToonMaterialsRecursive(Node node, List<ShaderMaterial> result)
+	{
+		if (node is MeshInstance3D meshInstance && meshInstance.Mesh != null)
+		{
+			int surfaces = meshInstance.Mesh.GetSurfaceCount();
+			for (int i = 0; i < surfaces; i++)
+			{
+				Material mat = meshInstance.GetActiveMaterial(i);
+				if (mat is ShaderMaterial shaderMaterial && IsToonMaterial(shaderMaterial))
+				{
+					result.Add(shaderMaterial);
+				}
+			}
+		}
+
+		foreach (Node child in node.GetChildren())
+		{
+			CollectToonMaterialsRecursive(child, result);
+		}
+	}
+
+	private static bool IsToonMaterial(ShaderMaterial material)
+	{
+		if (material.Shader == null)
+		{
+			return false;
+		}
+
+		string path = material.Shader.ResourcePath ?? "";
+		return path.Contains("genshin_toon", StringComparison.OrdinalIgnoreCase);
+	}
+
 	private static List<EnvShot> BuildGradeShots()
 	{
 		return new List<EnvShot>
@@ -582,6 +982,51 @@ public partial class CaptureSceneScreenshot : Node
 			new("dither_off.png", false),
 			new("dither_on.png", true),
 		};
+	}
+
+	private static List<DebugShot> BuildDebugShots()
+	{
+		return new List<DebugShot>
+		{
+			new("debug/final.png", 0),
+			new("debug/signed_ndl.png", 1),
+			new("debug/wrapped_ndl.png", 2),
+			new("debug/shade.png", 3),
+			new("debug/cast_shade.png", 4),
+			new("debug/face_map.png", 5),
+			new("debug/face_angle.png", 6),
+			new("debug/slot_id.png", 7),
+		};
+	}
+
+	private static List<FaceYawShot> BuildFaceYawShots()
+	{
+		float[] yaws = { 0.0f, 45.0f, 90.0f, 135.0f, 180.0f, -135.0f, -90.0f, -45.0f };
+		var shots = new List<FaceYawShot>();
+		foreach (float yaw in yaws)
+		{
+			string tag = FormatYawTag(yaw);
+			shots.Add(new FaceYawShot($"face_yaw/{tag}_final.png", yaw, 0));
+			shots.Add(new FaceYawShot($"face_yaw/{tag}_map.png", yaw, 5));
+			shots.Add(new FaceYawShot($"face_yaw/{tag}_angle.png", yaw, 6));
+		}
+
+		return shots;
+	}
+
+	private static string FormatYawTag(float yaw)
+	{
+		if (yaw > 0.0f)
+		{
+			return $"p{Mathf.RoundToInt(yaw)}";
+		}
+
+		if (yaw < 0.0f)
+		{
+			return $"m{Mathf.RoundToInt(-yaw)}";
+		}
+
+		return "0";
 	}
 
 	private void ProcessDitherSweep()
@@ -896,11 +1341,19 @@ public partial class CaptureSceneScreenshot : Node
 			return;
 		}
 
+		string safeName = string.IsNullOrWhiteSpace(fileName) ? "scene_loaded.png" : fileName.Trim();
 		string dir = ProjectSettings.GlobalizePath("res://screenshots");
+		string relativeDir = "";
+		int slash = safeName.LastIndexOf('/');
+		if (slash >= 0)
+		{
+			relativeDir = safeName.Substring(0, slash);
+			dir = $"{dir}/{relativeDir}";
+		}
+
 		DirAccess.MakeDirRecursiveAbsolute(dir);
 
-		string safeName = string.IsNullOrWhiteSpace(fileName) ? "scene_loaded.png" : fileName.Trim();
-		string path = $"{dir}/{safeName}";
+		string path = ProjectSettings.GlobalizePath($"res://screenshots/{safeName}");
 		Error saveError = image.SavePng(path);
 		if (saveError != Error.Ok)
 		{

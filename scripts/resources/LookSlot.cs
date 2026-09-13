@@ -53,10 +53,17 @@ public partial class LookSlot : Resource
 
 	[ExportGroup("Extra Maps")]
 	/// <summary>
-	/// R/G face lightmap (0–180° / 180–360°). Null = NdotL fallback.
+	/// Single-channel face lightmap in R. Null = NdotL fallback. Sampled with
+	/// mirrored UV when the light is on the left of the head.
 	/// </summary>
 	[Export]
 	public Texture2D FaceShadowTex { get; set; }
+
+	/// <summary>
+	/// Horizontal UV symmetry axis of the face island (0.5 = centered).
+	/// </summary>
+	[Export(PropertyHint.Range, "0.0,1.0")]
+	public float FaceMirrorAxis { get; set; } = 0.5f;
 
 	/// <summary>
 	/// Packed control map (light/spec/metal masks). Unused until later phases.

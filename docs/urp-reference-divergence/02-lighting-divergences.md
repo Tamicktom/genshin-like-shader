@@ -6,47 +6,15 @@ The strongest lighting mismatch is not a subtle parameter difference. The standa
 
 Several later features—outer shadow, dither, specular gating, and rim gating—consume that compromised shade value. Correcting the base shade signal must come before tuning those features.
 
-## 1. Back-facing surfaces are locked at half shade
+## 1. Back-facing surfaces were locked at half shade
 
-Classification: **confirmed defect**
+Classification: **resolved (P0.1)**
 
-Current code in [`genshin_toon.gdshader`, lines 171–178](../../shaders/genshin_toon.gdshader):
+Previous code in [`genshin_toon.gdshader`](../../shaders/genshin_toon.gdshader) clamped `dot(NORMAL, LIGHT)` to `[0, 1]` before wrapping. With hair/cloth `light_wrap == shadow_threshold`, every back-facing pixel landed at the smoothstep midpoint (`shade ≈ 0.5`).
 
-```text
-n = clamp(dot(NORMAL, LIGHT), 0, 1)
-wrapped = mix(n, 1, light_wrap)
-shade = smoothstep(threshold - soft, threshold + soft, wrapped)
-```
+### Fix applied
 
-Active preset values:
-
-| Preset | `light_wrap` | `shadow_threshold` | Result when raw `N·L <= 0` |
-| --- | ---: | ---: | ---: |
-| Hair | 0.20 | 0.20 | `smoothstep(0.182, 0.218, 0.20) = 0.5` |
-| Cloth | 0.30 | 0.30 | `smoothstep(0.274, 0.326, 0.30) = 0.5` |
-| Metal/weapon defaults | 0.50 | 0.45 | greater than 0.5; mostly lit |
-
-Sources: [`hair.tres`, lines 7–13](../../materials/presets/hair.tres), [`cloth.tres`, lines 7–13](../../materials/presets/cloth.tres), [`metal.tres`, lines 6–12](../../materials/presets/metal.tres), and [`ToonPreset.cs`, lines 24–44](../../scripts/resources/ToonPreset.cs).
-
-Because the initial clamp maps every negative dot product to zero:
-
-```text
-wrapped_min = mix(0, 1, light_wrap) = light_wrap
-```
-
-When `threshold == light_wrap`, every negative dot product lands exactly at the center of the smooth transition. A large portion of the model can never reach `shade = 0`.
-
-### Visual consequence
-
-- The unlit side retains too much of `lit_color`.
-- The outer band is layered over a half-lit base instead of a stable deep-shadow region.
-- Dither peaks because its gate `4 * shade * (1 - shade)` is maximal at `shade = 0.5`.
-- Hair and cloth appear busy or muddy rather than having clean poster-like light masses.
-- Metal and weapon surfaces can remain lit even when their normals face away from the light, unless cast-shadow attenuation suppresses them.
-
-### Corrective direction
-
-Preserve signed `N·L` through the remap:
+Signed `N·L` is preserved through the wrap:
 
 ```text
 raw_ndl = dot(NORMAL, LIGHT)              // [-1, 1]
@@ -56,22 +24,13 @@ shade = smoothstep(threshold - soft,
                    wrapped_ndl)
 ```
 
-Alternatively, if a `[0, 1]` Half-Lambert domain is preferred:
+All active presets now use `LightWrap = 0.5` (Half-Lambert domain) so thresholds share one meaning: `threshold = (signed_terminator + 1) / 2`. Outer-band and dither strengths on hair/cloth were zeroed pending retune against the corrected terminator.
 
-```text
-half_lambert = raw_ndl * 0.5 + 0.5
-shade = smoothstep(threshold - soft,
-                   threshold + soft,
-                   half_lambert)
-```
+Validate with `$GODOT --path . -- --debug-ab` and `tools/check_shade_coverage.py`.
 
-Then tune thresholds in that explicitly defined domain. Do not clamp the signed dot product before choosing the threshold.
+## 2. The Godot and URP threshold domains are now explicitly Half-Lambert
 
-The existing `use_one_sided_step` flag does not fix the minimum-domain problem by itself. With `wrapped == threshold`, `smoothstep(0, soft, 0)` evaluates to zero, but all negative `N·L` values still collapse to one constant. The flag changes the transition shape; it does not restore directional information.
-
-## 2. The Godot and URP threshold domains are not equivalent
-
-Classification: **active divergence**
+Classification: **resolved documentation / domain choice**
 
 The URP reference uses:
 
@@ -79,17 +38,13 @@ The URP reference uses:
 smoothstep(-0.55, -0.45, signed_NoL)
 ```
 
-Its default transition is on the back-facing hemisphere. The Godot presets use non-negative thresholds after clamping and wrapping. Parameter names look equivalent, but the values belong to different mathematical domains.
-
-A literal conversion for a Half-Lambert value is:
+Godot presets now live in an explicit Half-Lambert `[0, 1]` domain after `mix(signed, 1, 0.5)`. Conversion:
 
 ```text
 half_lambert_threshold = urp_signed_threshold * 0.5 + 0.5
 ```
 
-Therefore, URP `-0.5` corresponds to Half-Lambert `0.25`, not Godot `0.5`. This does not mean every material should use `0.25`; it means threshold values should only be compared after the domain is stated.
-
-Recommendation: document each preset in a signed `N·L` domain or normalize all presets to a single explicit Half-Lambert domain. Avoid a free combination of clamp, wrap, and threshold whose visual meaning changes per preset.
+URP `-0.5` corresponds to Half-Lambert `0.25`. Current starting thresholds (hair `0.425`, cloth `0.45`, metal/weapon `0.475`) sit near signed `-0.15` to `-0.05`.
 
 ## 3. Ambient composition washes the cel bands
 

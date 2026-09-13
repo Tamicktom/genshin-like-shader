@@ -28,7 +28,7 @@ public partial class ToonPreset : Resource
 	public float ShadowSmoothness { get; set; } = 0.04f;
 
 	/// <summary>
-	/// 0 = raw NdotL, 0.5 = Half-Lambert (current default).
+	/// 0 = raw signed NdotL, 0.5 = Half-Lambert (default domain for thresholds).
 	/// </summary>
 	[Export(PropertyHint.Range, "0.0,1.0")]
 	public float LightWrap { get; set; } = 0.5f;
@@ -148,6 +148,13 @@ public partial class ToonPreset : Resource
 	[Export(PropertyHint.Range, "0.0,1.0")]
 	public float RimStrength { get; set; } = 0.18f;
 
+	[ExportGroup("Face")]
+	/// <summary>
+	/// Softness for face-map comparison. Independent of body ShadowSmoothness.
+	/// </summary>
+	[Export(PropertyHint.Range, "0.001,0.35")]
+	public float FaceShadowSoftness { get; set; } = 0.04f;
+
 	public void ApplyToMaterial(ShaderMaterial material)
 	{
 		material.SetShaderParameter(ShaderParams.ShadowColor, ShadowColor);
@@ -193,5 +200,7 @@ public partial class ToonPreset : Resource
 		material.SetShaderParameter(ShaderParams.RimColor, RimColor);
 		material.SetShaderParameter(ShaderParams.RimPower, RimPower);
 		material.SetShaderParameter(ShaderParams.RimStrength, RimStrength);
+
+		material.SetShaderParameter(ShaderParams.FaceShadowSoftness, FaceShadowSoftness);
 	}
 }

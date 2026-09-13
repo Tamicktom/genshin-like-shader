@@ -5,8 +5,9 @@
 [resource]
 script = ExtResource("1_script")
 ShadowColor = Color(0.86, 0.74, 0.76, 1)
-ShadowThreshold = 0.52
+ShadowThreshold = 0.5
 ShadowSmoothness = 0.04
+LightWrap = 0.5
 CastShadowSoftness = 0.32
 LightIntensity = 0.7
 AmbientStrength = 0.2
@@ -25,3 +26,6 @@ RimColor = Color(0.7, 0.78, 1, 1)
 RimPower = 4.0
 RimStrength = 0.08
 OuterShadowStrength = 0.0
+FaceShadowSoftness = 0.04
+DitherStrength = 0.0
+DitherScale = 1.0

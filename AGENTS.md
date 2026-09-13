@@ -41,4 +41,19 @@ $GODOT --path . -- --face-ab    # face NdotL vs map → screenshots/face_*.png
 $GODOT --path . -- --hair-ab    # hair Kajiya-Kay vs mask → screenshots/hair_*.png
 $GODOT --path . -- --outline-ab # compositor outline A/B → screenshots/outline_*.png
 $GODOT --path . -- --dither-ab  # terminator dither off/on → screenshots/dither_*.png
+$GODOT --path . -- --debug-ab   # shader debug views 0–7 → screenshots/debug/*.png
+$GODOT --path . -- --face-yaw   # face close-up light yaw → screenshots/face_yaw/*.png
 ```
+
+Debug view indices (`debug_view` uniform):
+
+| View | Signal |
+| ---: | --- |
+| 0 | production final color |
+| 1 | signed N·L as `0.5*raw+0.5` |
+| 2 | wrapped N·L |
+| 3 | final shade |
+| 4 | cast-shadow term |
+| 5 | face map sample |
+| 6 | face angular threshold |
+| 7 | slot ID palette |

@@ -8,64 +8,17 @@ Each stage should produce an isolated capture before the next stage changes the 
 
 ## P0 — correctness
 
-### P0.1 Restore a valid signed lighting domain
+### P0.1 Restore a valid signed lighting domain — **done**
 
-Problem: negative `N·L` values are clamped away, and active hair/cloth thresholds equal their minimum wrapped values.
+Signed `N·L` is preserved; presets use Half-Lambert `LightWrap = 0.5`. Validate with `--debug-ab` and `tools/check_shade_coverage.py`.
 
-Change:
+### P0.2 Repair and verify the face-map contract — **done**
 
-```text
-raw_ndl = dot(NORMAL, LIGHT)
-wrapped_ndl = mix(raw_ndl, 1, light_wrap)
-shade = smoothstep(threshold - softness,
-                   threshold + softness,
-                   wrapped_ndl)
-```
+Adopted URP-compatible mirrored-UV single-channel sampling with `face_mirror_axis`. Validate with `--face-yaw` and `tools/check_face_map.py`.
 
-Then retune all preset thresholds. Do not preserve old numeric values merely to preserve the old image; the old values encode the defect.
+### P0.3 Add diagnostic shader views — **done**
 
-Acceptance criteria:
-
-- back-facing hair and cloth can reach `shade <= 0.05`;
-- the visible terminator remains stable during a 360° turntable;
-- metal does not remain fully lit when facing away from the key light;
-- dither is temporarily disabled during validation.
-
-Risk: the corrected model will initially look darker. Fix ambient balance after proving the shade signal, not in the same change.
-
-### P0.2 Repair and verify the face-map contract
-
-Problem: the active R and G channels are effectively identical.
-
-Choose one path:
-
-- packed R/G with meaningfully different channels; or
-- single-channel map plus mirrored UV, matching the local URP reference.
-
-Acceptance criteria:
-
-- automated channel check confirms nontrivial R/G difference if packed;
-- debug output clearly changes selected side at opposite light yaw;
-- close-up captures at -90° and +90° show mirrored or independently authored cheek behavior;
-- no reliance on the current full-body A/B pair.
-
-Risk: Godot may retain an old imported texture. Delete/reimport only as part of the implementation task and verify the runtime resource, not just the source PNG.
-
-### P0.3 Add diagnostic shader views
-
-Add temporary or permanent debug modes for:
-
-- signed `N·L`;
-- wrapped `N·L`;
-- final `shade`;
-- cast-shadow term;
-- face selected channel;
-- face angular threshold;
-- slot/material ID.
-
-Acceptance criteria: each view has a documented expected range and can be captured by the screenshot harness.
-
-This avoids tuning several mixed effects from final color alone.
+Permanent `debug_view` / `debug_slot_id` uniforms; `--debug-ab` and `--face-yaw` harness sweeps.
 
 ## P1 — high visual impact
 

@@ -6,8 +6,9 @@
 [resource]
 script = ExtResource("1_script")
 ShadowColor = Color(0.58, 0.52, 0.74, 1)
-ShadowThreshold = 0.45
+ShadowThreshold = 0.475
 ShadowSmoothness = 0.03
+LightWrap = 0.5
 CastShadowSoftness = 0.2
 LightIntensity = 0.7
 AmbientStrength = 0.2

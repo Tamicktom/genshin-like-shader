@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Generate a simple R/G face-shadow SDF for Raiden from the face albedo UV."""
+"""Generate a single-channel face-shadow SDF debug fixture for Raiden.
+
+This is a heuristic fixture used to exercise the mirrored-UV face path.
+It is NOT the committed production asset at looks/raiden_face_shadow.png —
+that file is a hand/derived grayscale directional gradient.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +15,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 FACE_ALBEDO = ROOT / "assets/raiden-shogun/textures/gltf_embedded_0.png"
-OUT_PATH = ROOT / "looks/raiden_face_shadow.png"
+OUT_PATH = ROOT / "looks/raiden_face_shadow_fixture.png"
 
 
 def find_eyes(px, w: int, h: int) -> list[tuple[int, int]]:
@@ -62,9 +67,9 @@ def main() -> None:
 
 	print(f"face center=({cx:.1f},{cy:.1f}) radius={radius:.1f}")
 
-	# Threshold map vs light angle (0 front-ish → 1 side).
-	# Default sun angle ≈ 0.44: center stays lit (~0.55), outer cheek shadows (~0.28).
-	out = Image.new("RGB", (w, h), (255, 255, 255))
+	# Single-channel directional map (R). Right-side lighting uses this UV;
+	# left-side lighting mirrors UV.x around the island symmetry axis.
+	out = Image.new("L", (w, h), 255)
 	out_px = out.load()
 
 	for y in range(h):
@@ -74,25 +79,20 @@ def main() -> None:
 			dist = math.hypot(dx, dy)
 
 			if dist > 1.08:
-				out_px[x, y] = (255, 255, 255)
+				out_px[x, y] = 255
 				continue
 
 			radial = max(0.0, 1.0 - dist * dist)
 
-			# R: light from right — shadow forms on +X cheek first.
-			# Tuned so default sun angle (~0.44) already clips the outer cheek.
-			cheek_r = 0.28 + 0.18 * radial - 0.55 * max(dx, 0.0) - 0.04 * max(dy, 0.0)
-			# G: mirrored for light from left.
-			cheek_g = 0.28 + 0.18 * radial - 0.55 * max(-dx, 0.0) - 0.04 * max(dy, 0.0)
+			# Light from right — shadow forms on +X cheek first.
+			cheek = 0.28 + 0.18 * radial - 0.55 * max(dx, 0.0) - 0.04 * max(dy, 0.0)
 
 			# Protect eye band.
 			if abs(dy + 0.12) < 0.18 and abs(dx) < 0.55:
-				cheek_r += 0.12
-				cheek_g += 0.12
+				cheek += 0.12
 
-			cheek_r = max(0.08, min(0.92, cheek_r))
-			cheek_g = max(0.08, min(0.92, cheek_g))
-			out_px[x, y] = (int(cheek_r * 255), int(cheek_g * 255), 255)
+			cheek = max(0.08, min(0.92, cheek))
+			out_px[x, y] = int(cheek * 255)
 
 	OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 	out.save(OUT_PATH)
@@ -103,9 +103,9 @@ def main() -> None:
 		("left", int(cx - radius * 0.45), int(cy)),
 		("right", int(cx + radius * 0.45), int(cy)),
 	):
-		r, g, _ = out_px[x, y]
-		print(f"  {name} ({x},{y}) R={r / 255:.3f} G={g / 255:.3f}")
-	print(f"wrote {OUT_PATH}")
+		v = out_px[x, y]
+		print(f"  {name} ({x},{y}) R={v / 255:.3f}")
+	print(f"wrote {OUT_PATH} (debug fixture; does not replace looks/raiden_face_shadow.png)")
 
 
 if __name__ == "__main__":

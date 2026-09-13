@@ -207,6 +207,10 @@ public partial class ApplyCharacterLook : Node3D
 		BindExtraMap(material, ShaderParams.HairHighlightTex, ShaderParams.UseHairHighlight, resolved.HairHighlightTex);
 		BindExtraMap(material, ShaderParams.DetailNormalTex, ShaderParams.UseDetailNormal, resolved.DetailNormalTex);
 
+		material.SetShaderParameter(ShaderParams.FaceMirrorAxis, resolved.FaceMirrorAxis);
+		material.SetShaderParameter(ShaderParams.DebugSlotId, (float)resolved.SlotIndex);
+		material.SetShaderParameter(ShaderParams.DebugView, 0);
+
 		float flatten = resolved.FlattenOutlineDepth ? resolved.OutlineDepthFlatten : 0.0f;
 		material.SetShaderParameter(ShaderParams.OutlineDepthFlatten, flatten);
 

@@ -45,7 +45,7 @@ shader_parameter/use_alpha_scissor = false
 shader_parameter/double_sided = false
 shader_parameter/shadow_color = Color(0.48, 0.44, 0.62, 1)
 shader_parameter/lit_color = Color(1, 1, 1, 1)
-shader_parameter/shadow_threshold = 0.48
+shader_parameter/shadow_threshold = 0.475
 shader_parameter/shadow_smoothness = 0.04
 shader_parameter/light_wrap = 0.5
 shader_parameter/use_one_sided_step = false
@@ -75,6 +75,8 @@ shader_parameter/rim_color = Color(0.7, 0.78, 1, 1)
 shader_parameter/rim_power = 4.0
 shader_parameter/rim_strength = 0.0
 shader_parameter/use_face_shadow = false
+shader_parameter/face_mirror_axis = 0.5
+shader_parameter/face_shadow_softness = 0.04
 shader_parameter/head_forward = Vector3(0, 0, 1)
 shader_parameter/head_right = Vector3(1, 0, 0)
 shader_parameter/head_position = Vector3(0, 0, 0)
@@ -84,6 +86,8 @@ shader_parameter/use_hair_highlight = false
 shader_parameter/hair_highlight_blend = 1.0
 shader_parameter/hair_highlight_fresnel = 5.0
 shader_parameter/use_detail_normal = false
+shader_parameter/debug_view = 0
+shader_parameter/debug_slot_id = 0.0
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 material = SubResource("ShaderMaterial_ground")

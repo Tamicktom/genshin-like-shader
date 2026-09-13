@@ -10,9 +10,9 @@ This is the most important distinction in the report:
 - the **active asset does not demonstrate the path**;
 - the existing A/B screenshots do not prove visual correctness.
 
-## 1. Reference and Godot use different map encodings
+## 1. Reference and Godot now share a single-channel mirrored-UV contract
 
-Classification: **active divergence**
+Classification: **resolved (P0.2)**
 
 ### URP reference
 
@@ -24,58 +24,35 @@ value = right_dot_light > 0
   : texture(face_map, uv).r
 ```
 
-It compares this value to an angle derived from `forward · light`.
+### Godot (current)
 
-### Godot
-
-The Godot shader samples one UV and expects two packed channels:
+Godot now matches that contract, with a tunable symmetry axis:
 
 ```text
-map_rg = texture(face_shadow_tex, uv).rg
-value = right_dot_light < 0 ? map_rg.g : map_rg.r
+face_uv = vec2(2 * face_mirror_axis - uv.x, uv.y)
+sample_uv = right_dot_light < 0 ? face_uv : uv
+value = texture(face_shadow_tex, sample_uv).r
 ```
 
-Both encodings can work. They are not interchangeable:
+`FaceMirrorAxis` defaults to `0.5` and is stored per `LookSlot`. Face softness is decoupled via `face_shadow_softness` / `FaceShadowSoftness`.
 
-- a one-channel URP map needs mirrored UV logic;
-- an R/G map needs independently authored or generated hemispheres;
-- duplicating one grayscale image into R and G without mirroring gives no directional asymmetry.
+## 2. The active face map is a single grayscale directional gradient
 
-Source: [`genshin_toon.gdshader`, lines 148–170](../../shaders/genshin_toon.gdshader).
+Classification: **resolved data understanding (was reported as R/G defect)**
 
-## 2. The active face map has no meaningful R/G separation
-
-Classification: **confirmed data defect**
-
-The active file is [`looks/raiden_face_shadow.png`](../../looks/raiden_face_shadow.png). Direct channel inspection found:
+The active file is [`looks/raiden_face_shadow.png`](../../looks/raiden_face_shadow.png). Channel inspection found:
 
 | Measurement | Result |
 | --- | ---: |
 | Size | 1024 × 1024 |
 | Mode | RGBA, 8-bit |
 | Pixels where R differs from G | 2 out of 1,048,576 |
-| Maximum absolute R/G difference | 2/255 |
-| Mean absolute R/G difference | approximately 0.0000029 |
+| Center pixel | `(128, 128, 128, 128)` |
+| Corner pixel | `(0, 0, 0, 0)` |
 
-The channels are effectively identical. Yet [`generate_raiden_face_shadow.py`, lines 82–96](../../tools/generate_raiden_face_shadow.py) is written to generate mirrored `cheek_r` and `cheek_g` values and save an RGB image.
+The channels are a **replicated grayscale** directional map, not an independently authored R/G pair. It does **not** match the older packed-R/G generator output (that script now writes a luminance fixture to `looks/raiden_face_shadow_fixture.png` and does not overwrite the committed asset).
 
-This indicates a mismatch between generator intent and the currently committed/loaded artifact. Possible causes include:
-
-- the active PNG was produced by another process or older generator;
-- the expected generated file was overwritten;
-- Godot is loading an older imported `.ctex`;
-- the image shown under the expected path is not the output described by the current script.
-
-The report does not infer which event occurred. The measurable result is sufficient: channel selection in the shader is currently almost a no-op.
-
-### Required correction
-
-Choose and enforce one contract:
-
-1. **URP-compatible single-channel contract:** store one directional map and mirror UV by light side.
-2. **Packed R/G contract:** regenerate or hand-author genuinely different channels and verify channel deltas before import.
-
-For the broader Genshin target, either can be valid. The packed contract is convenient if official assets already use directional channels.
+Validate with `tools/check_face_map.py` and `$GODOT --path . -- --face-yaw`.
 
 ## 3. Angular equations differ substantially
 
@@ -240,26 +217,21 @@ Face hull outline is disabled, while the scene-wide compositor can still detect 
 
 See [outline and post-process divergences](04-outline-and-post-process-divergences.md).
 
-## 10. Existing A/B evidence is insufficient
+## 10. Close-up yaw evidence is now available
 
-Classification: **validation defect**
+Classification: **resolved validation (P0.3)**
 
-`screenshots/face_ndl.png` and `screenshots/face_map.png` are 1280×720 full-body captures. The visible face is only a small region of the image. They show a broad tonal difference, but they cannot answer:
+`$GODOT --path . -- --face-yaw` freezes spin, resets character yaw, frames a face close-up, and sweeps the sun through `0°, ±45°, ±90°, ±135°, 180°`, capturing final color plus face-map and face-angle debug views under `screenshots/face_yaw/`.
 
-- whether the shadow moves to the correct cheek;
-- whether R/G selection works;
-- whether the map boundary follows facial features;
-- whether the transition is stable during yaw;
-- whether eyes, nose, and mouth are incorrectly shadowed;
-- whether the front gate snaps near side/back angles.
+`$GODOT --path . -- --debug-ab` captures full-body diagnostic views under `screenshots/debug/` (signed N·L, wrapped N·L, shade, cast, face map/angle, slot ID).
 
-A valid comparison requires a fixed close-up camera and at least five controlled light/head angles. See [the visual validation protocol](07-visual-validation.md).
+Historical `face_ndl.png` / `face_map.png` remain useful records but fail the close-up criterion.
 
 ## Priority
 
-1. Verify or regenerate the face map so R and G are meaningfully distinct, or switch to mirrored single-channel sampling.
-2. Add a shader debug output and close-up angular sweep.
+1. ~~Verify or regenerate the face map so R and G are meaningfully distinct, or switch to mirrored single-channel sampling.~~ Done (mirrored UV).
+2. ~~Add a shader debug output and close-up angular sweep.~~ Done (`--debug-ab`, `--face-yaw`).
 3. Add per-character direction offset/flip controls.
 4. Decide front/back behavior deliberately.
-5. Decouple face softness from body cel softness.
-6. Replace the procedural map with authored data before final look tuning.
+5. ~~Decouple face softness from body cel softness.~~ Done (`face_shadow_softness`).
+6. Replace the procedural/heuristic map with authored data before final look tuning.

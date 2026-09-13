@@ -14,9 +14,9 @@ The project has more features than the reference, but several high-impact paths 
 
 | Priority | Finding | Classification | Consequence |
 | --- | --- | --- | --- |
-| P0 | Hair and cloth use `light_wrap == shadow_threshold` with a centered two-sided step after clamping `N·L` to zero. | Confirmed defect | Every back-facing sample settles at approximately 50% shade instead of entering the full shadow band. |
-| P0 | The active face texture has practically identical R and G channels, while the shader expects distinct left/right angular masks. | Confirmed data defect | Selecting R or G changes almost nothing, so half of the directional face-map design is inactive. |
-| P0 | The face A/B images are full-body captures where the face occupies too few pixels to validate cheek-shadow direction or stability. | Validation defect | Existing evidence cannot establish that the face path is correct. |
+| P0 | Hair and cloth used `light_wrap == shadow_threshold` with a centered two-sided step after clamping `N·L` to zero. | **Resolved** — signed `N·L` restored; presets normalized to Half-Lambert `LightWrap = 0.5` | Back-facing samples can reach the full shadow band. |
+| P0 | The active face texture had practically identical R and G channels (actually a grayscale map replicated into RGBA), while the shader expected distinct left/right angular masks. | **Resolved** — mirrored-UV single-channel contract | Left/right light sides sample mirrored UVs of the R channel. |
+| P0 | The face A/B images were full-body captures where the face occupied too few pixels to validate cheek-shadow direction or stability. | **Resolved** — `--face-yaw` close-up + `--debug-ab` harness | Face path can be validated at controlled light yaw. |
 | P1 | The Godot ambient term is always added through emission, whereas the URP reference takes the component-wise maximum of indirect and direct light. | Active divergence | Shadow and lit bands are flatter and more washed out, especially with low sun energy. |
 | P1 | Hull outlines and a scene-wide depth Sobel are active together. | Active divergence | Character lines can double in thickness and the compositor outlines unrelated geometry such as the ground horizon. |
 | P1 | The compositor has no normal-edge input or character mask. | Engine compromise | It misses normal-only creases while adding depth edges across the whole scene. |
