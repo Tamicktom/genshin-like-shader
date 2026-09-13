@@ -1,0 +1,264 @@
+# Lighting divergences
+
+## Summary
+
+The strongest lighting mismatch is not a subtle parameter difference. The standard Godot path clamps negative `N·L`, wraps it, and then places the smoothstep threshold exactly at the minimum wrapped value for hair and cloth. This makes the entire back-facing hemisphere evaluate to the midpoint of the transition.
+
+Several later features—outer shadow, dither, specular gating, and rim gating—consume that compromised shade value. Correcting the base shade signal must come before tuning those features.
+
+## 1. Back-facing surfaces are locked at half shade
+
+Classification: **confirmed defect**
+
+Current code in [`genshin_toon.gdshader`, lines 171–178](../../shaders/genshin_toon.gdshader):
+
+```text
+n = clamp(dot(NORMAL, LIGHT), 0, 1)
+wrapped = mix(n, 1, light_wrap)
+shade = smoothstep(threshold - soft, threshold + soft, wrapped)
+```
+
+Active preset values:
+
+| Preset | `light_wrap` | `shadow_threshold` | Result when raw `N·L <= 0` |
+| --- | ---: | ---: | ---: |
+| Hair | 0.20 | 0.20 | `smoothstep(0.182, 0.218, 0.20) = 0.5` |
+| Cloth | 0.30 | 0.30 | `smoothstep(0.274, 0.326, 0.30) = 0.5` |
+| Metal/weapon defaults | 0.50 | 0.45 | greater than 0.5; mostly lit |
+
+Sources: [`hair.tres`, lines 7–13](../../materials/presets/hair.tres), [`cloth.tres`, lines 7–13](../../materials/presets/cloth.tres), [`metal.tres`, lines 6–12](../../materials/presets/metal.tres), and [`ToonPreset.cs`, lines 24–44](../../scripts/resources/ToonPreset.cs).
+
+Because the initial clamp maps every negative dot product to zero:
+
+```text
+wrapped_min = mix(0, 1, light_wrap) = light_wrap
+```
+
+When `threshold == light_wrap`, every negative dot product lands exactly at the center of the smooth transition. A large portion of the model can never reach `shade = 0`.
+
+### Visual consequence
+
+- The unlit side retains too much of `lit_color`.
+- The outer band is layered over a half-lit base instead of a stable deep-shadow region.
+- Dither peaks because its gate `4 * shade * (1 - shade)` is maximal at `shade = 0.5`.
+- Hair and cloth appear busy or muddy rather than having clean poster-like light masses.
+- Metal and weapon surfaces can remain lit even when their normals face away from the light, unless cast-shadow attenuation suppresses them.
+
+### Corrective direction
+
+Preserve signed `N·L` through the remap:
+
+```text
+raw_ndl = dot(NORMAL, LIGHT)              // [-1, 1]
+wrapped_ndl = mix(raw_ndl, 1, light_wrap)
+shade = smoothstep(threshold - soft,
+                   threshold + soft,
+                   wrapped_ndl)
+```
+
+Alternatively, if a `[0, 1]` Half-Lambert domain is preferred:
+
+```text
+half_lambert = raw_ndl * 0.5 + 0.5
+shade = smoothstep(threshold - soft,
+                   threshold + soft,
+                   half_lambert)
+```
+
+Then tune thresholds in that explicitly defined domain. Do not clamp the signed dot product before choosing the threshold.
+
+The existing `use_one_sided_step` flag does not fix the minimum-domain problem by itself. With `wrapped == threshold`, `smoothstep(0, soft, 0)` evaluates to zero, but all negative `N·L` values still collapse to one constant. The flag changes the transition shape; it does not restore directional information.
+
+## 2. The Godot and URP threshold domains are not equivalent
+
+Classification: **active divergence**
+
+The URP reference uses:
+
+```text
+smoothstep(-0.55, -0.45, signed_NoL)
+```
+
+Its default transition is on the back-facing hemisphere. The Godot presets use non-negative thresholds after clamping and wrapping. Parameter names look equivalent, but the values belong to different mathematical domains.
+
+A literal conversion for a Half-Lambert value is:
+
+```text
+half_lambert_threshold = urp_signed_threshold * 0.5 + 0.5
+```
+
+Therefore, URP `-0.5` corresponds to Half-Lambert `0.25`, not Godot `0.5`. This does not mean every material should use `0.25`; it means threshold values should only be compared after the domain is stated.
+
+Recommendation: document each preset in a signed `N·L` domain or normalize all presets to a single explicit Half-Lambert domain. Avoid a free combination of clamp, wrap, and threshold whose visual meaning changes per preset.
+
+## 3. Ambient composition washes the cel bands
+
+Classification: **active divergence**
+
+Godot writes a flat ambient term as emission in [`genshin_toon.gdshader`, lines 129–135](../../shaders/genshin_toon.gdshader):
+
+```text
+EMISSION = ALBEDO * ambient_color * ambient_strength
+```
+
+It then adds per-light diffuse through:
+
+```text
+DIFFUSE_LIGHT += lit_term * LIGHT_COLOR * light_intensity
+```
+
+The effective result is approximately:
+
+```text
+final = albedo * summed_diffuse + albedo * ambient
+```
+
+The URP reference instead computes:
+
+```text
+final = albedo * max(indirect, main + additional) + emission
+```
+
+The difference is important:
+
+- additive ambient raises both bands continuously;
+- `max` supplies a floor only when direct light falls below the indirect term;
+- multiple Godot lights add complete shadow-tint contributions, potentially flattening contrast;
+- Godot emission is not modulated by direct shadowing and can make cast shadows look detached.
+
+The scene uses a directional light energy of `0.3`, while presets multiply it by about `0.7`; ambient strength is typically `0.2`. Those values make the ambient term a comparatively large part of the final image. See [`main.tscn`, lines 99–109](../../scenes/main.tscn) and [`ToonPreset.cs`, lines 44–52](../../scripts/resources/ToonPreset.cs).
+
+### Corrective options
+
+In impact order:
+
+1. Restore a deep-shadow-capable shade signal before touching intensity.
+2. Reduce the ambient emission and evaluate under one key light.
+3. If URP-like composition is desired, move custom composition into a path where indirect and direct can be compared rather than relying on standard additive `light()` accumulation.
+4. If retaining Godot accumulation, treat later lights as controlled fills with reduced per-light contribution, similar to the URP sample's 25% factor.
+
+Do not compensate by raising sun energy first. That increases highlights and specular terms without restoring the missing shadow domain.
+
+## 4. Cast-shadow remapping is useful but semantically broad
+
+Classification: **intentional adaptation with caveat**
+
+Current code:
+
+```text
+cast_aa = max(cast_shadow_softness, fwidth(ATTENUATION) * 1.5)
+cast_shade = smoothstep(0, cast_aa, ATTENUATION)
+shade = min(material_shade, cast_shade)
+```
+
+This is a good NPR decision: received shadows select the same colored shadow band instead of multiplying the result to black. The `fwidth` term also reduces crawling around shadow-map texels.
+
+The caveat is that Godot's `ATTENUATION` can represent more than binary directional shadow visibility for other light types. A wide fixed range beginning at zero tends to treat most nonzero attenuation as fully lit. If point and spot lights become important, shadow and distance behavior should be tested separately.
+
+The URP reference uses partial shadow reception:
+
+```text
+cel *= lerp(1, shadow_attenuation, receive_shadow_amount)
+```
+
+Its default amount is `0.65`, so received shadows do not necessarily force the full shadow band. Godot currently uses `min`, which allows cast shadows to dominate completely. This can be a valid Genshin-style choice, but it is not parity.
+
+## 5. Outer shadow is driven by the wrong source on face-map materials
+
+Classification: **latent defect**
+
+The standard path defines `wrap_ndl`, but the face path sets:
+
+```text
+wrap_ndl = tex_shadow_dir
+```
+
+The outer band then always derives from `wrap_ndl`, using the global `shadow_threshold` and `outer_shadow_offset`. Face currently has `outer_shadow_strength = 0`, so the mismatch is inactive. Enabling the outer band on a face would compare map values rather than using a separately authored face-band contract.
+
+Recommendation: keep face outer-band strength at zero unless the face map explicitly encodes a second band, or define a separate face-band equation.
+
+## 6. Dither amplifies the current lighting defect
+
+Classification: **active divergence dependent on P0**
+
+Dither is applied to `shade` and gated by:
+
+```text
+dither_band = 4 * shade * (1 - shade)
+```
+
+That gate is mathematically reasonable for a narrow terminator. With the current hair/cloth defect, however, the full back-facing hemisphere can sit at `shade = 0.5`, where the dither amplitude is maximal. It can become a surface treatment rather than terminator anti-banding.
+
+The current full-body `dither_off.png` and `dither_on.png` captures show almost no evaluable difference at character scale. This neither proves that the effect is harmless nor that it is useful.
+
+Recommendation: disable dither while correcting the shade domain, then re-enable it only after a close-up diagnostic view confirms it is spatially confined to a narrow transition.
+
+## 7. Specular and rim are valid extensions, but their masks inherit shade errors
+
+Classification: **reference limitation plus active dependency**
+
+The URP proof of concept has no specular or rim lighting. Their presence in Godot is not a parity defect.
+
+All Godot specular branches are multiplied by `shade`, and rim is also shade-gated. This is appropriate for light-side anime highlights, but the broken shade floor allows highlights farther into the nominally unlit side.
+
+Specific observations:
+
+- Hair's extracted mask replaces Kajiya-Kay completely when `hair_highlight_blend = 1`.
+- Metallic ramp code is available but inactive on Raiden.
+- Face, metal, and weapon retain a small Fresnel rim while hair and cloth use zero rim.
+- The compositor highlight strength is only `0.01`, so it cannot currently replace a strong authored anime rim.
+
+Correct the base shade first, then evaluate each highlight under front, side, and back light.
+
+## 8. Material color is multiplied in a compatible order, but light sums differ
+
+Classification: **partially compatible**
+
+Godot's custom diffuse term is ultimately multiplied by `ALBEDO`, matching the reference's `surface.albedo * rawLightSum`. The common claim that one shader tints “before” albedo and the other “after” is not itself the major problem for one light.
+
+The meaningful differences are:
+
+- Godot sums every light's full tinted diffuse contribution;
+- URP reduces additional lights to 25%;
+- Godot adds ambient emission;
+- URP uses a component-wise maximum between direct and indirect;
+- Godot adds custom specular separately;
+- scene tonemapping and saturation alter the final band colors.
+
+## 9. Recommended target equation
+
+For the current Godot architecture, a minimal correction that preserves its features is:
+
+```text
+raw_ndl = dot(NORMAL, LIGHT)
+wrapped_ndl = mix(raw_ndl, 1, light_wrap)
+
+main_shade = smoothstep(
+  shadow_threshold - shadow_smoothness,
+  shadow_threshold + shadow_smoothness,
+  wrapped_ndl
+)
+
+cast_shade = remap_shadow_attenuation(ATTENUATION)
+shade = min(main_shade, cast_shade)
+
+outer_shade = smoothstep(
+  shadow_threshold - outer_offset - outer_softness,
+  shadow_threshold - outer_offset + outer_softness,
+  wrapped_ndl
+)
+
+outer_band = (1 - shade) * outer_shade
+toon_tint = mix(shadow_color, lit_color, shade)
+toon_tint = mix(toon_tint, outer_shadow_color, outer_band * outer_strength)
+```
+
+Then tune `light_wrap` and `shadow_threshold` independently. The minimum wrapped value must be safely below the lower smoothstep edge for any material expected to have a full shadow band.
+
+## Priority
+
+1. Fix signed `N·L` handling and retune thresholds.
+2. Re-evaluate ambient/direct balance.
+3. Validate cast-shadow semantics.
+4. Re-enable and tune outer band and dither.
+5. Tune specular, rim, and scene grade only after stable bands exist.
