@@ -8,6 +8,10 @@
 [node name="RaidenShogun" type="Node3D" unique_id=1110029233]
 script = ExtResource("2_apply")
 Look = ExtResource("3_look")
+HeadNodePath = NodePath("HeadAxes")
+
+[node name="HeadAxes" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0)
 
 [node name="SpinY" type="Node" parent="." unique_id=1225596374]
 script = ExtResource("4_spin")

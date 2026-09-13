@@ -1,4 +1,5 @@
 //* Libraries imports
+using System.Collections.Generic;
 using Godot;
 
 //* Local imports
@@ -22,16 +23,64 @@ public partial class ApplyCharacterLook : Node3D
 	[Export]
 	public float OutlineWidthScale { get; set; } = 1.0f;
 
+	/// <summary>
+	/// Node whose world +Z / +X drive face-shadow head axes.
+	/// Empty = this node (character root). Prefer a child Marker3D named HeadAxes.
+	/// </summary>
+	[Export]
+	public NodePath HeadNodePath { get; set; } = new NodePath("HeadAxes");
+
+	private readonly List<ShaderMaterial> _faceShadowMaterials = new();
+	private Node3D _headNode;
+
 	public override void _Ready()
 	{
 		if (ApplyOnReady)
 		{
 			ApplyToTree(this);
 		}
+
+		ResolveHeadNode();
+		SetProcess(_faceShadowMaterials.Count > 0);
+	}
+
+	public override void _Process(double delta)
+	{
+		if (_faceShadowMaterials.Count == 0)
+		{
+			return;
+		}
+
+		if (_headNode == null || !GodotObject.IsInstanceValid(_headNode))
+		{
+			ResolveHeadNode();
+			if (_headNode == null)
+			{
+				return;
+			}
+		}
+
+		Basis basis = _headNode.GlobalTransform.Basis;
+		// Unity-style forward/right: Godot +Z faces the camera when the character does.
+		Vector3 forward = basis.Z.Normalized();
+		Vector3 right = basis.X.Normalized();
+
+		foreach (ShaderMaterial material in _faceShadowMaterials)
+		{
+			if (material == null || !GodotObject.IsInstanceValid(material))
+			{
+				continue;
+			}
+
+			material.SetShaderParameter(ShaderParams.HeadForward, forward);
+			material.SetShaderParameter(ShaderParams.HeadRight, right);
+		}
 	}
 
 	public void ApplyToTree(Node root)
 	{
+		_faceShadowMaterials.Clear();
+
 		if (Look == null)
 		{
 			GD.PushWarning($"apply_character_look: no CharacterLook assigned on {Name}");
@@ -49,6 +98,22 @@ public partial class ApplyCharacterLook : Node3D
 		}
 
 		ApplyRecursive(root);
+		ResolveHeadNode();
+		SetProcess(_faceShadowMaterials.Count > 0);
+	}
+
+	private void ResolveHeadNode()
+	{
+		_headNode = null;
+		if (HeadNodePath != null && !HeadNodePath.IsEmpty)
+		{
+			_headNode = GetNodeOrNull<Node3D>(HeadNodePath);
+		}
+
+		if (_headNode == null)
+		{
+			_headNode = this;
+		}
 	}
 
 	private void ApplyRecursive(Node node)
@@ -133,7 +198,16 @@ public partial class ApplyCharacterLook : Node3D
 		material.SetShaderParameter(ShaderParams.AlphaScissorThreshold, 0.5f);
 		material.SetShaderParameter(ShaderParams.DoubleSided, resolved.DoubleSided);
 
+		BindExtraMap(material, ShaderParams.FaceShadowTex, ShaderParams.UseFaceShadow, resolved.FaceShadowTex);
+		BindExtraMap(material, ShaderParams.ControlTex, ShaderParams.UseControlTex, resolved.ControlTex);
+		BindExtraMap(material, ShaderParams.DetailNormalTex, ShaderParams.UseDetailNormal, resolved.DetailNormalTex);
+
 		preset?.ApplyToMaterial(material);
+
+		if (resolved.FaceShadowTex != null)
+		{
+			_faceShadowMaterials.Add(material);
+		}
 
 		if (!resolved.EnableOutline)
 		{
@@ -159,5 +233,21 @@ public partial class ApplyCharacterLook : Node3D
 		material.NextPass = outlineMaterial;
 
 		return material;
+	}
+
+	private static void BindExtraMap(
+		ShaderMaterial material,
+		string texParam,
+		string useParam,
+		Texture2D texture)
+	{
+		if (texture == null)
+		{
+			material.SetShaderParameter(useParam, false);
+			return;
+		}
+
+		material.SetShaderParameter(texParam, texture);
+		material.SetShaderParameter(useParam, true);
 	}
 }

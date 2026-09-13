@@ -1,6 +1,7 @@
-[gd_resource type="Resource" script_class="ToonPreset" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="ToonPreset" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/resources/ToonPreset.cs" id="1_script"]
+[ext_resource type="Texture2D" path="res://materials/textures/gold_metallic_gradient.tres" id="2_grad"]
 
 [resource]
 script = ExtResource("1_script")
@@ -21,6 +22,9 @@ HairSpecShift = 0.08
 HairSpecSecondary = 0.4
 HairSpecSecondaryShift = -0.12
 HairSpecSecondarySize = 24.0
+UseMetallicGradient = false
+MetallicGradientTex = ExtResource("2_grad")
+MetallicStrength = 1.0
 RimColor = Color(0.7, 0.78, 1, 1)
 RimPower = 4.0
 RimStrength = 0.08

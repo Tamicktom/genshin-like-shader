@@ -27,6 +27,7 @@ The demo character slow-spins via `SpinY.cs` so lighting and outlines can be jud
 assets/raiden-shogun/     Character model + textures
 looks/                    Per-character CharacterLook tables
 materials/presets/        Shared ToonPreset resources (face, hair, …)
+materials/textures/       Shared ramps (e.g. gold metallic GradientTexture1D)
 scenes/
   main.tscn               Playable demo scene
   raiden-shogun.tscn      Character + look applicator + spin
@@ -128,9 +129,9 @@ For each surface:
 | Slot | Typical match | Notes |
 | --- | --- | --- |
 | Face | `*face*`, `*eye*`, `*teeth*`, `*2_0.png`, `*gltf_embedded_0*` | Warm terminator, double-sided, **no outline** |
+| Weapon | `*katana*`, `*2_5.png`, `*gltf_embedded_5*` | Blinn-Phong metal, double-sided, **no outline** |
+| Metal | `*acc*` (before Hair so `Hair_Accs` matches) | Tight Phong (half-vector gradient available, flag off), outline on |
 | Hair | `*hair*`, `*2_1.png`, `*gltf_embedded_1*` | Cool shadow, anisotropic spec, double-sided |
-| Weapon | `*katana*`, `*2_5.png`, `*gltf_embedded_5*` | Metal shading, double-sided, **no outline** |
-| Metal | `*acc*` | Tighter specular, outline on |
 | Dress | `*dress*` | Cloth preset, double-sided |
 | Body | `*body*` | Cloth preset, `OutlineDepthBias = 0.003` |
 | Fallback | everything else | Cloth preset, outline on |
@@ -159,6 +160,7 @@ Shared presets live under `materials/presets/` (`face`, `hair`, `cloth`, `metal`
 - `CastShadowSoftness` — how the shadow map blends into the cel band
 - `LightIntensity` / `AmbientStrength`
 - `RimStrength` / `SpecularStrength`
+- `UseMetallicGradient` / `MetallicGradientTex` / `MetallicStrength` — 1D half-vector gold ramp (opt-in; off on Raiden metal)
 
 **On the outline shader**
 
@@ -170,7 +172,7 @@ Shared presets live under `materials/presets/` (`face`, `hair`, `cloth`, `metal`
 
 - One directional sun, Orthogonal shadows, max distance `14`, atlas `8192`, Ultra filter.
 - PCSS (`light_angular_distance`) stays at `0` so the contact shadow does not crawl while the model rotates.
-- Mild ambient + slight glow; cel bands stay readable.
+- Filmic tonemap (`tonemap_mode = 2`), exposure `1.0`, glow off, slight `adjustment_saturation` (`1.1`) so cel bands stay poster-colored rather than grey. Phase 3 A/B (Linear / Reinhardt / Filmic / ACES / AGX) locked Filmic + sat `1.1`; GT compositor skipped. Fog stays at density `0.0012` (denser wraps milk the dress terminator).
 
 ## Display / AA
 

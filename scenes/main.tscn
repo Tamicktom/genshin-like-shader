@@ -1,8 +1,9 @@
 [gd_scene format=3 uid="uid://pcbrrpm18unh"]
 
 [ext_resource type="PackedScene" uid="uid://c5a2lyggsnxev" path="res://scenes/raiden-shogun.tscn" id="1_o5qli"]
-[ext_resource type="Script" path="res://scripts/FrameCharacterCamera.cs" id="2_cam"]
+[ext_resource type="Script" uid="uid://d4fx38u764dcl" path="res://scripts/FrameCharacterCamera.cs" id="2_cam"]
 [ext_resource type="Shader" uid="uid://cpo7r0lrj0q6q" path="res://shaders/genshin_toon.gdshader" id="3_toon"]
+[ext_resource type="Script" uid="uid://bv03q3jg6kwbv" path="res://scripts/CaptureSceneScreenshot.cs" id="4_shot"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_top_color = Color(0.45, 0.58, 0.92, 1)
@@ -22,14 +23,12 @@ ambient_light_source = 2
 ambient_light_color = Color(0.82, 0.84, 0.92, 1)
 ambient_light_energy = 0.25
 tonemap_mode = 2
-tonemap_exposure = 0.9
-glow_intensity = 0.35
-glow_bloom = 0.08
-glow_hdr_threshold = 0.85
 fog_enabled = true
 fog_light_color = Color(0.72, 0.7, 0.86, 1)
 fog_density = 0.0012
 fog_aerial_perspective = 0.25
+adjustment_enabled = true
+adjustment_saturation = 1.1
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ground"]
 render_priority = 0
@@ -41,12 +40,19 @@ shader_parameter/alpha_scissor_threshold = 0.5
 shader_parameter/use_alpha_scissor = false
 shader_parameter/double_sided = false
 shader_parameter/shadow_color = Color(0.48, 0.44, 0.62, 1)
+shader_parameter/lit_color = Color(1, 1, 1, 1)
 shader_parameter/shadow_threshold = 0.48
 shader_parameter/shadow_smoothness = 0.04
+shader_parameter/light_wrap = 0.5
+shader_parameter/use_one_sided_step = false
 shader_parameter/cast_shadow_softness = 0.32
 shader_parameter/light_intensity = 0.62
 shader_parameter/ambient_strength = 0.3
 shader_parameter/ambient_color = Color(0.78, 0.8, 0.9, 1)
+shader_parameter/outer_shadow_color = Color(0.5, 0.35, 0.58, 1)
+shader_parameter/outer_shadow_offset = 0.06
+shader_parameter/outer_shadow_smoothness = 0.02
+shader_parameter/outer_shadow_strength = 0.0
 shader_parameter/specular_color = Color(1, 0.96, 0.92, 1)
 shader_parameter/specular_size = 48.0
 shader_parameter/specular_smoothness = 0.08
@@ -57,15 +63,23 @@ shader_parameter/hair_spec_shift = 0.08
 shader_parameter/hair_spec_secondary = 0.4
 shader_parameter/hair_spec_secondary_shift = -0.12
 shader_parameter/hair_spec_secondary_size = 24.0
+shader_parameter/use_metallic_gradient = false
+shader_parameter/metallic_strength = 1.0
 shader_parameter/rim_color = Color(0.7, 0.78, 1, 1)
 shader_parameter/rim_power = 4.0
 shader_parameter/rim_strength = 0.0
+shader_parameter/use_face_shadow = false
+shader_parameter/head_forward = Vector3(0, 0, 1)
+shader_parameter/head_right = Vector3(1, 0, 0)
+shader_parameter/use_control_tex = false
+shader_parameter/use_detail_normal = false
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 material = SubResource("ShaderMaterial_ground")
 size = Vector2(40, 40)
 
 [node name="Main" type="Node3D" unique_id=1020440606]
+script = ExtResource("4_shot")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1905834855]
 environment = SubResource("Environment_main")

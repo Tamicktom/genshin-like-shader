@@ -20,12 +20,21 @@ public static class ShaderParams
 
 	//* Cel shading
 	public const string ShadowColor = "shadow_color";
+	public const string LitColor = "lit_color";
 	public const string ShadowThreshold = "shadow_threshold";
 	public const string ShadowSmoothness = "shadow_smoothness";
+	public const string LightWrap = "light_wrap";
+	public const string UseOneSidedStep = "use_one_sided_step";
 	public const string CastShadowSoftness = "cast_shadow_softness";
 	public const string LightIntensity = "light_intensity";
 	public const string AmbientStrength = "ambient_strength";
 	public const string AmbientColor = "ambient_color";
+
+	//* Outer shadow (second terminator band; strength 0 = off)
+	public const string OuterShadowColor = "outer_shadow_color";
+	public const string OuterShadowOffset = "outer_shadow_offset";
+	public const string OuterShadowSmoothness = "outer_shadow_smoothness";
+	public const string OuterShadowStrength = "outer_shadow_strength";
 
 	//* Specular
 	public const string SpecularColor = "specular_color";
@@ -39,6 +48,11 @@ public static class ShaderParams
 	public const string HairSpecSecondaryShift = "hair_spec_secondary_shift";
 	public const string HairSpecSecondarySize = "hair_spec_secondary_size";
 
+	//* Metallic half-vector gradient (1D ramp; flag off = Phong / Kajiya-Kay)
+	public const string UseMetallicGradient = "use_metallic_gradient";
+	public const string MetallicGradientTex = "metallic_gradient_tex";
+	public const string MetallicStrength = "metallic_strength";
+
 	//* Rim
 	public const string RimColor = "rim_color";
 	public const string RimPower = "rim_power";
@@ -50,4 +64,14 @@ public static class ShaderParams
 	public const string OutlineSaturation = "outline_saturation";
 	public const string OutlineWidth = "outline_width";
 	public const string OutlineDepthBias = "outline_depth_bias";
+
+	//* Extra maps (LookSlot; missing tex = old path)
+	public const string FaceShadowTex = "face_shadow_tex";
+	public const string UseFaceShadow = "use_face_shadow";
+	public const string HeadForward = "head_forward";
+	public const string HeadRight = "head_right";
+	public const string ControlTex = "control_tex";
+	public const string UseControlTex = "use_control_tex";
+	public const string DetailNormalTex = "detail_normal_tex";
+	public const string UseDetailNormal = "use_detail_normal";
 }

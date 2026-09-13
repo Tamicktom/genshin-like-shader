@@ -5,12 +5,19 @@
 [resource]
 script = ExtResource("1_script")
 ShadowColor = Color(0.66, 0.56, 0.8, 1)
-ShadowThreshold = 0.5
-ShadowSmoothness = 0.032
+LitColor = Color(1.02, 0.99, 1.04, 1)
+ShadowThreshold = 0.3
+ShadowSmoothness = 0.026
+LightWrap = 0.3
+UseOneSidedStep = false
 CastShadowSoftness = 0.24
 LightIntensity = 0.7
 AmbientStrength = 0.2
 AmbientColor = Color(0.78, 0.8, 0.9, 1)
+OuterShadowColor = Color(0.58, 0.42, 0.68, 1)
+OuterShadowOffset = 0.06
+OuterShadowSmoothness = 0.016
+OuterShadowStrength = 0.75
 SpecularColor = Color(0.88, 0.86, 0.94, 1)
 SpecularSize = 32.0
 SpecularSmoothness = 0.14

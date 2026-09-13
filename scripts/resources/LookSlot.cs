@@ -41,6 +41,25 @@ public partial class LookSlot : Resource
 	[Export(PropertyHint.Range, "0.0,0.4")]
 	public float OutlineDepthBias { get; set; }
 
+	[ExportGroup("Extra Maps")]
+	/// <summary>
+	/// R/G face lightmap (0–180° / 180–360°). Null = NdotL fallback.
+	/// </summary>
+	[Export]
+	public Texture2D FaceShadowTex { get; set; }
+
+	/// <summary>
+	/// Packed control map (light/spec/metal masks). Unused until later phases.
+	/// </summary>
+	[Export]
+	public Texture2D ControlTex { get; set; }
+
+	/// <summary>
+	/// Detail normal for metal UV warp etc. Unused until later phases.
+	/// </summary>
+	[Export]
+	public Texture2D DetailNormalTex { get; set; }
+
 	public bool Matches(string meshName, string texturePath)
 	{
 		if (AnyPatternMatches(NamePatterns, meshName))

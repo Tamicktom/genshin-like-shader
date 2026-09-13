@@ -15,11 +15,29 @@ public partial class ToonPreset : Resource
 	[Export]
 	public Color ShadowColor { get; set; } = new Color(0.62f, 0.55f, 0.78f, 1.0f);
 
+	/// <summary>
+	/// Lit-band tint. White keeps today's albedo × light look.
+	/// </summary>
+	[Export]
+	public Color LitColor { get; set; } = new Color(1.0f, 1.0f, 1.0f, 1.0f);
+
 	[Export(PropertyHint.Range, "0.0,1.0")]
 	public float ShadowThreshold { get; set; } = 0.5f;
 
 	[Export(PropertyHint.Range, "0.001,0.35")]
 	public float ShadowSmoothness { get; set; } = 0.04f;
+
+	/// <summary>
+	/// 0 = raw NdotL, 0.5 = Half-Lambert (current default).
+	/// </summary>
+	[Export(PropertyHint.Range, "0.0,1.0")]
+	public float LightWrap { get; set; } = 0.5f;
+
+	/// <summary>
+	/// false = two-sided step around threshold; true = one-sided Genshin-style step.
+	/// </summary>
+	[Export]
+	public bool UseOneSidedStep { get; set; }
 
 	[Export(PropertyHint.Range, "0.001,0.8")]
 	public float CastShadowSoftness { get; set; } = 0.22f;
@@ -32,6 +50,22 @@ public partial class ToonPreset : Resource
 
 	[Export]
 	public Color AmbientColor { get; set; } = new Color(0.78f, 0.8f, 0.9f, 1.0f);
+
+	[ExportGroup("Outer Shadow")]
+	[Export]
+	public Color OuterShadowColor { get; set; } = new Color(0.5f, 0.35f, 0.58f, 1.0f);
+
+	[Export(PropertyHint.Range, "0.0,0.35")]
+	public float OuterShadowOffset { get; set; } = 0.06f;
+
+	[Export(PropertyHint.Range, "0.001,0.2")]
+	public float OuterShadowSmoothness { get; set; } = 0.02f;
+
+	/// <summary>
+	/// 0 = off (single terminator). Above 0 paints a thin second band inside the main shadow.
+	/// </summary>
+	[Export(PropertyHint.Range, "0.0,1.0")]
+	public float OuterShadowStrength { get; set; }
 
 	[ExportGroup("Specular")]
 	[Export]
@@ -64,6 +98,20 @@ public partial class ToonPreset : Resource
 	[Export(PropertyHint.Range, "1.0,256.0")]
 	public float HairSpecSecondarySize { get; set; } = 24.0f;
 
+	[ExportGroup("Metallic Gradient")]
+	/// <summary>
+	/// When true and MetallicGradientTex is set, replace Phong / Kajiya-Kay with a
+	/// 1D half-vector ramp (Genshin-style sweeping metal band).
+	/// </summary>
+	[Export]
+	public bool UseMetallicGradient { get; set; }
+
+	[Export]
+	public Texture2D MetallicGradientTex { get; set; }
+
+	[Export(PropertyHint.Range, "0.0,2.0")]
+	public float MetallicStrength { get; set; } = 1.0f;
+
 	[ExportGroup("Rim")]
 	[Export]
 	public Color RimColor { get; set; } = new Color(0.7f, 0.78f, 1.0f, 1.0f);
@@ -77,12 +125,20 @@ public partial class ToonPreset : Resource
 	public void ApplyToMaterial(ShaderMaterial material)
 	{
 		material.SetShaderParameter(ShaderParams.ShadowColor, ShadowColor);
+		material.SetShaderParameter(ShaderParams.LitColor, LitColor);
 		material.SetShaderParameter(ShaderParams.ShadowThreshold, ShadowThreshold);
 		material.SetShaderParameter(ShaderParams.ShadowSmoothness, ShadowSmoothness);
+		material.SetShaderParameter(ShaderParams.LightWrap, LightWrap);
+		material.SetShaderParameter(ShaderParams.UseOneSidedStep, UseOneSidedStep);
 		material.SetShaderParameter(ShaderParams.CastShadowSoftness, CastShadowSoftness);
 		material.SetShaderParameter(ShaderParams.LightIntensity, LightIntensity);
 		material.SetShaderParameter(ShaderParams.AmbientStrength, AmbientStrength);
 		material.SetShaderParameter(ShaderParams.AmbientColor, AmbientColor);
+
+		material.SetShaderParameter(ShaderParams.OuterShadowColor, OuterShadowColor);
+		material.SetShaderParameter(ShaderParams.OuterShadowOffset, OuterShadowOffset);
+		material.SetShaderParameter(ShaderParams.OuterShadowSmoothness, OuterShadowSmoothness);
+		material.SetShaderParameter(ShaderParams.OuterShadowStrength, OuterShadowStrength);
 
 		material.SetShaderParameter(ShaderParams.SpecularColor, SpecularColor);
 		material.SetShaderParameter(ShaderParams.SpecularSize, SpecularSize);
@@ -94,6 +150,14 @@ public partial class ToonPreset : Resource
 		material.SetShaderParameter(ShaderParams.HairSpecSecondary, HairSpecSecondary);
 		material.SetShaderParameter(ShaderParams.HairSpecSecondaryShift, HairSpecSecondaryShift);
 		material.SetShaderParameter(ShaderParams.HairSpecSecondarySize, HairSpecSecondarySize);
+
+		bool useMetallic = UseMetallicGradient && MetallicGradientTex != null;
+		material.SetShaderParameter(ShaderParams.UseMetallicGradient, useMetallic);
+		if (MetallicGradientTex != null)
+		{
+			material.SetShaderParameter(ShaderParams.MetallicGradientTex, MetallicGradientTex);
+		}
+		material.SetShaderParameter(ShaderParams.MetallicStrength, MetallicStrength);
 
 		material.SetShaderParameter(ShaderParams.RimColor, RimColor);
 		material.SetShaderParameter(ShaderParams.RimPower, RimPower);

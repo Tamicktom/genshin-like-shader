@@ -6,7 +6,7 @@
 script = ExtResource("1_script")
 ShadowColor = Color(0.86, 0.74, 0.76, 1)
 ShadowThreshold = 0.52
-ShadowSmoothness = 0.055
+ShadowSmoothness = 0.04
 CastShadowSoftness = 0.32
 LightIntensity = 0.7
 AmbientStrength = 0.2
@@ -24,3 +24,4 @@ HairSpecSecondarySize = 24.0
 RimColor = Color(0.7, 0.78, 1, 1)
 RimPower = 4.0
 RimStrength = 0.08
+OuterShadowStrength = 0.0

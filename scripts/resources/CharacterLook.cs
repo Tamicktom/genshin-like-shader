@@ -16,6 +16,9 @@ public readonly struct ResolvedLookSlot
 	public float OutlineWidth { get; init; }
 	public float OutlineDepthBias { get; init; }
 	public string SlotName { get; init; }
+	public Texture2D FaceShadowTex { get; init; }
+	public Texture2D ControlTex { get; init; }
+	public Texture2D DetailNormalTex { get; init; }
 }
 
 /// <summary>
@@ -97,6 +100,9 @@ public partial class CharacterLook : Resource
 					OutlineWidth = slot.OutlineWidth,
 					OutlineDepthBias = slot.OutlineDepthBias,
 					SlotName = slot.SlotName,
+					FaceShadowTex = slot.FaceShadowTex,
+					ControlTex = slot.ControlTex,
+					DetailNormalTex = slot.DetailNormalTex,
 				};
 			}
 		}
@@ -109,6 +115,9 @@ public partial class CharacterLook : Resource
 			OutlineWidth = FallbackOutlineWidth,
 			OutlineDepthBias = FallbackOutlineDepthBias,
 			SlotName = "fallback",
+			FaceShadowTex = null,
+			ControlTex = null,
+			DetailNormalTex = null,
 		};
 	}
 }

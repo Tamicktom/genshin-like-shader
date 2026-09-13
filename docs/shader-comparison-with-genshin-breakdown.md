@@ -15,14 +15,14 @@ The Unity write-up is a reconstruction, not Hoyoverse source. It is still the cl
 | Cast shadows into the cel band | `ATTENUATION` remapped, not multiplied to black | Close |
 | Outer (second) shadow band | Single terminator only | Missing |
 | Anisotropic hair | Dual-lobe Kajiya-Kay, gated by shade | Partial |
-| Face shadow texture (R/G lightmap) | Face uses the same NdotL as cloth | Missing |
-| Metallic (half-vector gradient / 1D matcap) | Tight Blinn-Phong blob | Partial |
+| Face shadow texture (R/G lightmap) | Painted SDF on Face slot + head axes; NdotL fallback | Close |
+| Metallic (half-vector gradient / 1D matcap) | Path + shared ramp ready; Raiden metal preset uses Phong (flag off) | Partial |
 | Multiply by light color | `LIGHT_COLOR * light_intensity` | Yes |
 | Fog | Scene `Environment` fog, very light | Partial |
 | Outline | Inverted hull (`NextPass`), not depth/normal Sobel | Different approach |
 | Special face outline (suppress inner face edges) | Face slot disables the hull entirely | Workaround |
 | Edge highlight (white Sobel rim, not Fresnel) | Fresnel rim on the lit side | Different approach |
-| Custom cartoon tonemapper (Gran Turismo) | Godot ACES (`tonemap_mode = 2`) | Missing |
+| Custom cartoon tonemapper (Gran Turismo) | Godot Filmic (`tonemap_mode = 2`) + `adjustment_saturation = 1.1`; glow off (Phase 3 A/B; GT compositor not needed) | Partial |
 | Dithering | None | Missing |
 | Glasses parallax | Not in original Genshin; we do not have it | N/A |
 
@@ -118,8 +118,6 @@ Highest-value next step for hair is a mask texture (or a packed channel from the
 
 ## Face shadow
 
-This is the largest lighting gap.
-
 Mendez shows why raw NdotL fails on a face: as the key light orbits, the terminator crawls across nose and lips. Genshin uses a **face lightmap**:
 
 - R = shadow shape for light in 0–180°
@@ -128,15 +126,14 @@ Mendez shows why raw NdotL fails on a face: as the key light orbits, the termina
 
 The result is a stable, art-directed cheek shadow that does not follow facial topology.
 
-Our face preset only changes colors and softness (warmer `ShadowColor`, `ShadowThreshold = 0.52`, `RimStrength = 0.08`, **no outline**). The terminator is still Half-Lambert on mesh normals. On a spinning Raiden that will keep producing the “ugly NdotL” case from Mendez’s figure.
+**Ours (Phase 5):** Face slot binds `FaceShadowTex` (`looks/raiden_face_shadow.png`, painted R/G SDF — no official lightmap in the GLB). `ApplyCharacterLook` writes `head_forward` / `head_right` each frame from a `HeadAxes` Marker3D (Raiden has no skeleton). Shader `use_face_shadow` replaces NdotL with the map sample (soft `smoothstep`, still `min` with cast shadows). Missing map → old NdotL. Outer shadow stays 0 on the face preset. A/B: `--face-ab`.
 
-**What a port needs**
+Face preset still owns warm `ShadowColor`, smoothness on the **sampled** terminator, low rim, **no outline**.
 
-1. A face SDF / ramp texture (Hoyoverse models often ship this; the current Raiden GLB path would need to be checked for a `_LightMap` / `_FaceMap`).
-2. Head-space light direction: a node or script that exposes the head’s forward/right to the shader (Mendez feeds `Head.transform.forward` from script).
-3. A face-only branch in the toon shader (or a second shader) that replaces NdotL with the map sample.
+**Observations**
 
-Until that exists, the face will never read as Genshin, no matter how much `shadow_smoothness` is tuned.
+- The painted SDF is readable lookdev, not Hoyoverse quality — iterate with `tools/generate_raiden_face_shadow.py` or hand-paint over the face UV.
+- If the cheek lands on the wrong side, rotate `HeadAxes` 180° Y or swap R/G in the generator; do not flatten normals.
 
 ---
 
@@ -144,15 +141,13 @@ Until that exists, the face will never read as Genshin, no matter how much `shad
 
 Mendez: not a PBR metal. Sample a **gradient texture** with `u = dot(N, normalize(V + L))` (half-vector), optionally warp UVs with a normal map. The highlight is a moving colored band, like a 1D matcap.
 
-Ours (metal + weapon presets): isotropic Blinn-Phong, `specular_size = 96`, `specular_strength = 0.22`, same `shadow_color` as cloth. No gradient map, no metallic normal, `METALLIC = 0` in the fragment shader (the PBR metal slot is unused; lighting is fully custom).
+Ours: the shader path is in (`UseMetallicGradient` + `metallic_gradient_tex` sampled with `dot(NORMAL, half_dir)` into `SPECULAR_LIGHT`, gated by cel `shade`). Shared ramp: `materials/textures/gold_metallic_gradient.tres`. **Raiden’s metal preset leaves the flag off** and keeps isotropic Blinn-Phong (`specular_size = 96`, `specular_strength = 0.22`), same as weapon — flip the flag on that preset (or a future look) to enable the band. No detail-normal UV warp yet; the Metal look slot (`*acc*`, ordered before Hair so `Hair_Accs` matches) is the mask until a packed control map exists.
 
 **Observations**
 
-- Tight Phong can fake a bright glint on gold, but it is a round blob, not a sweeping band. The GIFs in the breakdown (Itto buckle, Sucrose brooch) are exactly that sweeping band.
-- Distortion with a normal map is how Genshin puts repeating scale/pattern into metal-on-fabric. We cannot do that without a UV-warped lookup.
-- Weapon and metal share the same numbers. A polearm blade and a gold ornament should not.
-
-Closest small step: a 1D `gradient_tex` sampled with `dot(NORMAL, normalize(VIEW + LIGHT))`, multiplied by a metal mask (often in a packed map’s alpha or blue). Keep the cel diffuse underneath.
+- Tight Phong can fake a bright glint on gold, but it is a round blob, not a sweeping band. The GIFs in the breakdown (Itto buckle, Sucrose brooch) are exactly that sweeping band — available when `UseMetallicGradient` is on.
+- Distortion with a normal map is how Genshin puts repeating scale/pattern into metal-on-fabric. Deferred until Phase 0 detail normals + art.
+- Weapon and metal share Phong numbers again on Raiden; the gradient path is opt-in per preset.
 
 ---
 
@@ -218,15 +213,23 @@ For a Genshin-like plate, this rim should probably go *down*, not up, once a Sob
 
 ## Tonemap, dithering, glow
 
+Godot 4.7 `Environment.tonemap_mode` enum: Linear `0`, Reinhardt `1`, **Filmic `2`**, ACES `3`, AGX `4`. Older notes in this repo that called `tonemap_mode = 2` “ACES” were wrong.
+
 | | Mendez | This project |
 | --- | --- | --- |
-| Tonemap | Custom Gran Turismo (keeps saturation, tames highs) | `tonemap_mode = 2` (ACES), exposure `0.9` |
+| Tonemap | Custom Gran Turismo (keeps saturation, tames highs) | Filmic (`tonemap_mode = 2`), exposure `1.0`, `adjustment_saturation = 1.1` |
 | Dither | Listed as a feature (likely 8-bit banding) | None |
-| Glow | Not the focus | `glow_intensity = 0.35`, bloom `0.08` |
+| Glow | Not the focus | Explicitly off (`glow_enabled = false`) |
 
-Mendez’s own comparison: no tonemap blows out; Neutral is flat; **ACES contrast-desaturates**; GT is the cartoon pick. We are on the option he rejected for this style.
+Mendez’s own comparison: no tonemap blows out; Neutral is flat; **ACES contrast-desaturates**; GT is the cartoon pick. Phase 3 A/B on this project (same sun, glow off, exposure `1.0`):
 
-Godot 4’s ACES on a low-energy sun (`light_energy = 0.3`) plus glow is why the demo can look slightly grey/milky instead of poster-like. A custom curve (even a cheap filmic with a saturation preserve) would move the stills closer to the Unity plates without touching the toon shader.
+- **ACES** — higher mid sat on some regions but punches bright whites toward grey (`bright_sat` lowest among the useful modes).
+- **AGX** — darkest / most muted overall; fails the poster-color bar.
+- **Linear / Reinhardt** — identical at `tonemap_white = 1.0`; punchier mean sat but darker plate; highlights do not roll off as kindly as Filmic.
+- **Filmic + sat `1.0`** — readable bands, but cloth/skin chroma is quieter than with the boost.
+- **Filmic + sat `1.1`** — winner: whites keep tint, cel bands still read. Locked on `main.tscn`. No GT `CompositorEffect` (gate did not trip).
+
+Fog A/B left density at `0.0012`; `0.008` milks the dress terminator toward the fog tint.
 
 Dithering only matters after a hard posterize. Our `smoothstep` bands are already a few percent wide, so banding is mild. It becomes useful if outer-shadow + harder steps land.
 
@@ -241,10 +244,10 @@ The Unity breakdown is one character shader with many keywords. This repo splits
 | Face | Warm terminator, weak spec | Off | No face map |
 | Hair | Cool shadow, anisotropic on | On | No highlight mask |
 | Weapon | Metal Phong | Off | Hull would hollow the blade |
-| Metal | Same Phong as weapon | On | No gradient / matcap |
-| Dress / body / fallback | Cloth | On (body has 3 mm depth bias) | No outer shadow |
+| Metal | Phong (gradient flag off on Raiden) | On | Slot `*acc*` before Hair so Hair_Accs is metal |
+| Dress / body / fallback | Cloth | On (body has 3 mm depth bias) | Outer shadow on cloth/hair |
 
-That data-driven split is healthier than a 200-uniform mega-shader, and it is not in Mendez’s article. What *is* missing on the data side is packed extra maps (face SDF, metal mask, hair spec mask, outline width). `ApplyCharacterLook` currently binds **albedo only**.
+That data-driven split is healthier than a 200-uniform mega-shader, and it is not in Mendez’s article. Extra maps now live on `LookSlot` (`FaceShadowTex`, `ControlTex`, `DetailNormalTex`); `ApplyCharacterLook` binds them with `use_*` flags. Face SDF is assigned on Raiden; control / detail-normal sampling waits for later phases.
 
 ---
 
@@ -266,9 +269,9 @@ These are production/demo choices, not Genshin features. They should stay even i
 Ordered by how much they move a still toward the Unity/Genshin plates:
 
 1. **Face lightmap** — without it the head will always look like generic toon.
-2. **Outer shadow band** — cheap, no new textures, big “painted terminator” win.
-3. **Metallic half-vector gradient** — needed for gold/ornament, not for cloth.
-4. **Custom tonemap (GT / saturation-preserving)** — ACES is fighting the palette.
+2. **Outer shadow band** — cheap, no new textures, big “painted terminator” win (landed on hair/cloth).
+3. **Metallic half-vector gradient** — path + ramp landed; Raiden metal preset leaves it off (Phong).
+4. **Custom tonemap (GT / saturation-preserving)** — Phase 3 locked Filmic + sat `1.1`; full GT compositor still optional if that grade ever fails.
 5. **Post-process outline + edge highlight** — hull cannot do inner edges or the white anime rim.
 6. **Hair highlight mask** — Kajiya-Kay is optional once a painted streak exists.
 7. **Dither** — last, after the bands get harder.

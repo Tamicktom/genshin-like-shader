@@ -40,11 +40,13 @@ Visual-impact order in the comparison put **face** first. Implementation order b
 
 ---
 
-## Phase 0 — Extra-map seam (no visual change)
+## Phase 0 — Extra-map seam (no visual change) ✅
 
 **Why first:** every later texture feature (face, metal mask, hair streak) needs `ApplyCharacterLook` to bind more than albedo. Do the plumbing while the image is still the known baseline.
 
 **Done when:** F5 looks identical to HEAD. Inspector shows empty optional map slots. Shader compiles with the new uniforms unused.
+
+**Result:** Landed with Phase 5. `LookSlot` has nullable `FaceShadowTex` / `ControlTex` / `DetailNormalTex`; `ApplyCharacterLook` binds them with `use_*`; shader uniforms exist. Control / detail-normal remain unsampled.
 
 ### Steps
 
@@ -96,11 +98,13 @@ Visual-impact order in the comparison put **face** first. Implementation order b
 
 ---
 
-## Phase 3 — Cartoon tonemap (scene grade)
+## Phase 3 — Cartoon tonemap (scene grade) ✅
 
 **Why:** judging Phases 1–2 on a desaturated grade hides whether the bands are right. Mendez’s plates use a saturation-preserving curve (Gran Turismo). Confirm Godot 4.7’s `tonemap_mode` enum before changing it (`2` is Filmic in 4.x, `3` is ACES, `4` may be AGX). The comparison doc assumed ACES; verify in the inspector.
 
 **Done when:** bright whites (hair shine, metal) hold color instead of going grey, and the cel bands still read. Glow is weaker or off if it milks the image.
+
+**Result:** Filmic (`tonemap_mode = 2`) + `adjustment_saturation = 1.1`, glow off, exposure `1.0`. GT compositor **skipped** (native Filmic passed the bar). Fog left at `0.0012`. Sweep helpers: `CaptureSceneScreenshot` user args `--grade-ab` / `--fog-ab`.
 
 ### Steps
 
@@ -113,11 +117,13 @@ Visual-impact order in the comparison put **face** first. Implementation order b
 
 ---
 
-## Phase 4 — Metallic half-vector gradient
+## Phase 4 — Metallic half-vector gradient ✅
 
-**Why:** gold in Genshin is a moving 1D ramp on `dot(N, normalize(V+L))`, not a Phong blob. Weapon and ornaments currently share the same numbers.
+**Why:** gold in Genshin is a moving 1D ramp on `dot(N, normalize(V+L))`, not a Phong blob. Weapon and ornaments previously shared the same numbers.
 
 **Done when:** Raiden’s gold ( acc / ornaments ) shows a view-dependent **band** while spinning. Cloth/face/hair Phong (or lack of it) is unchanged. Weapon can stay Phong until a metal mask exists.
+
+**Result:** `GradientTexture1D` at `materials/textures/gold_metallic_gradient.tres`; `UseMetallicGradient` + tex + strength on `ToonPreset` (default off). Shader path landed; **Raiden’s metal preset leaves the flag off** (tight Phong) — the ramp is ready for other looks. Weapon stays Phong. Metal slot ordered before Hair so `*Hair_Accs*` matches metal. Detail-normal UV warp skipped (no Phase 0 maps yet).
 
 ### Steps
 
@@ -132,13 +138,15 @@ Packed metal masks (often a channel on a lightmap) wait until those textures exi
 
 ---
 
-## Phase 5 — Face shadow map
+## Phase 5 — Face shadow map ✅
 
 **Why:** this is the real Genshin face. NdotL on nose/lips will never look right on a turntable.
 
 **Blocker:** the Raiden GLB currently exposes albedo only (`gltf_embedded_0` etc.). Official Hoyoverse dumps usually ship a face lightmap (R = 0–180°, G = 180–360°). Ganyu/Ayaka folders in `assets/` also look like diffuse-only. This phase starts with an inventory.
 
 **Done when:** with a map assigned, the cheek shadow stays a painted shape as the sun (or the body yaw) moves. Without a map, the face falls back to today’s NdotL.
+
+**Result:** Phase 0 extra-map seam landed (`FaceShadowTex` / `ControlTex` / `DetailNormalTex` on `LookSlot`). No official face lightmap in assets — generated `looks/raiden_face_shadow.png` (R/G cheek SDF) via `tools/generate_raiden_face_shadow.py`. `HeadAxes` Marker3D + per-frame `head_forward` / `head_right` on `ApplyCharacterLook`. Shader `use_face_shadow` replaces NdotL with map sample (soft `smoothstep`, still `min` with cast shadows). Face slot has the map; outline stays off; outer shadow stays 0. Sweep: `--face-ab` → `screenshots/face_ndl.png` / `face_map.png`.
 
 ### Steps
 
@@ -235,6 +243,9 @@ Each line should be its own commit (working demo after each):
 - **One directional key.** Additive `light()` is a feature, not a reason to fill-light the shadows away.
 - **No glasses parallax.** Extra in the Unity post, not Genshin.
 - **No automated shader tests.** Visual turntable + screenshots. If a debug view is added, put it behind a shader uniform (`debug_shade`), not a second scene.
+- **Phase 3 grade = Filmic + sat 1.1.** A/B rejected ACES (grey highs), AGX (muted), and denser fog. GT compositor deferred until Filmic fails the bar.
+- **Phase 4 metal = half-vector `GradientTexture1D`.** Shader path + shared ramp exist; Raiden metal preset keeps the flag off (Phong). Weapon stays Phong. Metal slot before Hair so Hair_Accs is metal, not Kajiya-Kay.
+- **Phase 5 face = painted R/G SDF + head XZ axes.** No official lightmap in GLB; `looks/raiden_face_shadow.png` + `HeadAxes` Marker3D (no skeleton). Missing map → NdotL. Phase 0 extra-map seam landed with this phase.
 
 ---
 

@@ -12,6 +12,8 @@ public partial class SpinY : Node
 	[Export]
 	public float RadiansPerSecond { get; set; } = 0.2f;
 
+	private bool _isStopped = false;
+
 	public override void _Process(double delta)
 	{
 		if (GetParent() is not Node3D parent3D)
@@ -19,6 +21,17 @@ public partial class SpinY : Node
 			return;
 		}
 
+		if (_isStopped) return;
+
 		parent3D.RotateY((float)delta * RadiansPerSecond);
+	}
+
+	//* Stop if space is pressed
+	public override void _Input(InputEvent @event)
+	{
+		if (@event.IsActionPressed("space"))
+		{
+			_isStopped = !_isStopped;
+		}
 	}
 }
