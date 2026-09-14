@@ -28,7 +28,7 @@ public partial class CaptureSceneScreenshot : Node
 	/// Node that must exist before capturing (character root).
 	/// </summary>
 	[Export]
-	public NodePath RequiredNodePath { get; set; } = new NodePath("RaidenShogun");
+	public NodePath RequiredNodePath { get; set; } = new NodePath("Characters");
 
 	/// <summary>
 	/// Extra process frames after the required node is ready so deferred
@@ -87,8 +87,7 @@ public partial class CaptureSceneScreenshot : Node
 	private bool _shotApplied;
 	private List<ShaderMaterial> _flagMaterials;
 	private string _flagUseParam;
-	private SpinY _spinY;
-	private bool _spinWasProcessing;
+	private readonly List<(SpinY Spin, bool WasProcessing)> _frozenSpins = new();
 	private ToonOutlineCompositorEffect _outlineEffect;
 	private bool _savedOutlineEnabled;
 	private float _savedHighlightStrength;
@@ -480,20 +479,40 @@ public partial class CaptureSceneScreenshot : Node
 
 	private void FreezeSpin(Node characterRoot)
 	{
-		_spinY = characterRoot?.GetNodeOrNull<SpinY>("SpinY");
-		if (_spinY != null)
+		_frozenSpins.Clear();
+		if (characterRoot == null)
 		{
-			_spinWasProcessing = _spinY.IsProcessing();
-			_spinY.SetProcess(false);
+			return;
+		}
+
+		FreezeSpinRecursive(characterRoot);
+	}
+
+	private void FreezeSpinRecursive(Node node)
+	{
+		if (node is SpinY spinY)
+		{
+			_frozenSpins.Add((spinY, spinY.IsProcessing()));
+			spinY.SetProcess(false);
+		}
+
+		foreach (Node child in node.GetChildren())
+		{
+			FreezeSpinRecursive(child);
 		}
 	}
 
 	private void RestoreSpin()
 	{
-		if (_spinY != null && GodotObject.IsInstanceValid(_spinY))
+		foreach ((SpinY spin, bool wasProcessing) in _frozenSpins)
 		{
-			_spinY.SetProcess(_spinWasProcessing);
+			if (spin != null && GodotObject.IsInstanceValid(spin))
+			{
+				spin.SetProcess(wasProcessing);
+			}
 		}
+
+		_frozenSpins.Clear();
 	}
 
 	private void ApplyFlagShot(FlagShot shot)

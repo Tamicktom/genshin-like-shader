@@ -24,7 +24,7 @@ Prefer this path when a Godot binary is needed; it is not on `PATH`.
 
 ## Auto screenshot on run
 
-`CaptureSceneScreenshot` on `scenes/main.tscn` waits until `RaidenShogun` is ready (meshes present), settles a few frames, then writes:
+`CaptureSceneScreenshot` on `scenes/main.tscn` waits until `Characters` is ready (meshes present), settles a few frames, then writes:
 
 ```
 screenshots/scene_loaded.png

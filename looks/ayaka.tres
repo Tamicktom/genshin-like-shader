@@ -1,0 +1,72 @@
+[gd_resource type="Resource" script_class="CharacterLook" format=3]
+
+[ext_resource type="Script" uid="uid://dy60j5beprd2r" path="res://scripts/resources/CharacterLook.cs" id="1_look"]
+[ext_resource type="Script" uid="uid://c1ikos2y5mner" path="res://scripts/resources/LookSlot.cs" id="2_slot"]
+[ext_resource type="Shader" uid="uid://cpo7r0lrj0q6q" path="res://shaders/genshin_toon.gdshader" id="3_toon"]
+[ext_resource type="Shader" uid="uid://bwsx4e1glch3x" path="res://shaders/genshin_outline.gdshader" id="4_outline"]
+[ext_resource type="Resource" path="res://materials/presets/face.tres" id="5_face"]
+[ext_resource type="Resource" path="res://materials/presets/hair.tres" id="6_hair"]
+[ext_resource type="Resource" path="res://materials/presets/metal.tres" id="8_metal"]
+[ext_resource type="Resource" path="res://materials/presets/cloth.tres" id="9_cloth"]
+
+[sub_resource type="Resource" id="slot_face"]
+script = ExtResource("2_slot")
+SlotName = "Face"
+NamePatterns = PackedStringArray("*面*", "*目*", "*眉*", "*睫*", "*齒*", "*口*", "*二重*", "*白目*", "*星目*")
+TexturePatterns = PackedStringArray("*面*", "*Ayaka_面*")
+Preset = ExtResource("5_face")
+DoubleSided = true
+EnableOutline = false
+IncludeInOutlineMask = false
+FlattenOutlineDepth = true
+OutlineDepthFlatten = 0.85
+
+[sub_resource type="Resource" id="slot_hair_acc"]
+script = ExtResource("2_slot")
+SlotName = "HairAccessory"
+NamePatterns = PackedStringArray("*髮饰*", "*发饰*")
+Preset = ExtResource("6_hair")
+DoubleSided = true
+IncludeInOutlineMask = true
+
+[sub_resource type="Resource" id="slot_hair"]
+script = ExtResource("2_slot")
+SlotName = "Hair"
+NamePatterns = PackedStringArray("*髮*", "*发*", "*前髮*")
+TexturePatterns = PackedStringArray("*发*", "*Ayaka_发*")
+Preset = ExtResource("6_hair")
+DoubleSided = true
+IncludeInOutlineMask = true
+
+[sub_resource type="Resource" id="slot_metal"]
+script = ExtResource("2_slot")
+SlotName = "Metal"
+NamePatterns = PackedStringArray("*神之眼*")
+Preset = ExtResource("8_metal")
+IncludeInOutlineMask = true
+
+[sub_resource type="Resource" id="slot_body"]
+script = ExtResource("2_slot")
+SlotName = "Body"
+NamePatterns = PackedStringArray("*肌*")
+TexturePatterns = PackedStringArray("*肌*", "*Ayaka_肌*")
+Preset = ExtResource("9_cloth")
+OutlineDepthBias = 0.003
+IncludeInOutlineMask = true
+
+[sub_resource type="Resource" id="slot_cloth"]
+script = ExtResource("2_slot")
+SlotName = "Cloth"
+NamePatterns = PackedStringArray("*服*", "*裙*", "*褲*", "*帶*", "*結*", "*蝴蝶*")
+TexturePatterns = PackedStringArray("*服*", "*Ayaka_服*")
+Preset = ExtResource("9_cloth")
+DoubleSided = true
+IncludeInOutlineMask = true
+
+[resource]
+script = ExtResource("1_look")
+DisplayName = "Kamisato Ayaka"
+ToonShader = ExtResource("3_toon")
+OutlineShader = ExtResource("4_outline")
+Slots = Array[ExtResource("2_slot")]([SubResource("slot_face"), SubResource("slot_hair_acc"), SubResource("slot_hair"), SubResource("slot_metal"), SubResource("slot_body"), SubResource("slot_cloth")])
+FallbackPreset = ExtResource("9_cloth")

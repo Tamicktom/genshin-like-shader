@@ -45,6 +45,12 @@ public partial class ApplyCharacterLook : Node3D
 	public bool LogSlotResolution { get; set; }
 
 	/// <summary>
+	/// Case-insensitive wildcards; matching meshes are hidden (e.g. MMD <c>*spa*</c> shells).
+	/// </summary>
+	[Export]
+	public string[] SkipNamePatterns { get; set; } = System.Array.Empty<string>();
+
+	/// <summary>
 	/// Visual layer bit used when <see cref="LookSlot.IncludeInOutlineMask"/> is true.
 	/// Default layer 2 (bit 1). CharacterMaskPass culls to this layer.
 	/// </summary>
@@ -191,10 +197,39 @@ public partial class ApplyCharacterLook : Node3D
 		}
 	}
 
+	private static bool MatchesAnyPattern(string[] patterns, string haystack)
+	{
+		if (patterns == null || string.IsNullOrEmpty(haystack))
+		{
+			return false;
+		}
+
+		foreach (string pattern in patterns)
+		{
+			if (string.IsNullOrEmpty(pattern))
+			{
+				continue;
+			}
+
+			if (haystack.MatchN(pattern))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	private void ApplyToMeshInstance(MeshInstance3D meshInstance)
 	{
 		if (meshInstance.Mesh == null)
 		{
+			return;
+		}
+
+		if (MatchesAnyPattern(SkipNamePatterns, meshInstance.Name))
+		{
+			meshInstance.Visible = false;
 			return;
 		}
 

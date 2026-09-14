@@ -1,0 +1,21 @@
+[gd_scene format=3 uid="uid://dacq8mvdsft41"]
+
+[ext_resource type="PackedScene" uid="uid://bq2plwp241cmi" path="res://assets/ayaka/source/Ayaka.glb" id="1_model"]
+[ext_resource type="Script" uid="uid://dn74ubfjfnce0" path="res://scripts/ApplyCharacterLook.cs" id="2_apply"]
+[ext_resource type="Resource" path="res://looks/ayaka.tres" id="3_look"]
+[ext_resource type="Script" uid="uid://dxxuemymc6pv0" path="res://scripts/SpinY.cs" id="4_spin"]
+
+[node name="Ayaka" type="Node3D"]
+script = ExtResource("2_apply")
+Look = ExtResource("3_look")
+HeadNodePath = NodePath("HeadAxes")
+SkipNamePatterns = PackedStringArray("*spa*")
+LogSlotResolution = false
+
+[node name="HeadAxes" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.175, 0)
+
+[node name="SpinY" type="Node" parent="."]
+script = ExtResource("4_spin")
+
+[node name="Model" parent="." instance=ExtResource("1_model")]

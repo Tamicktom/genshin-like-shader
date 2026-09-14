@@ -6,6 +6,8 @@
 [ext_resource type="Script" uid="uid://bv03q3jg6kwbv" path="res://scripts/CaptureSceneScreenshot.cs" id="4_shot"]
 [ext_resource type="CompositorEffect" uid="uid://dg122mqh1si0n" path="res://materials/compositor/toon_outline_effect.tres" id="5_outline"]
 [ext_resource type="Script" path="res://scripts/CharacterMaskPass.cs" id="6_mask"]
+[ext_resource type="PackedScene" uid="uid://cayakalineup01" path="res://scenes/ayaka.tscn" id="7_ayaka"]
+[ext_resource type="PackedScene" uid="uid://cganyulineup01" path="res://scenes/ganyu.tscn" id="8_ganyu"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_top_color = Color(0.45, 0.58, 0.92, 1)
@@ -99,6 +101,7 @@ size = Vector2(40, 40)
 
 [node name="Main" type="Node3D" unique_id=1020440606]
 script = ExtResource("4_shot")
+RequiredNodePath = NodePath("Characters")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1905834855]
 environment = SubResource("Environment_main")
@@ -113,7 +116,7 @@ shadow_bias = 0.02
 shadow_normal_bias = 1.0
 directional_shadow_mode = 0
 directional_shadow_fade_start = 1.0
-directional_shadow_max_distance = 14.0
+directional_shadow_max_distance = 24.0
 directional_shadow_pancake_size = 2.0
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=1779279210]
@@ -121,7 +124,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5717056, 1.6122932, 1.91409
 current = true
 fov = 35.0
 script = ExtResource("2_cam")
-TargetPath = NodePath("../RaidenShogun")
+TargetPath = NodePath("../Characters")
 Padding = 1.25
 HeightBias = 0.12
 YawDegrees = 24.0
@@ -130,14 +133,24 @@ PitchDegrees = -6.0
 [node name="Ground" type="MeshInstance3D" parent="." unique_id=367872357]
 mesh = SubResource("PlaneMesh_ground")
 
-[node name="RaidenShogun" parent="." unique_id=1110029233 instance=ExtResource("1_o5qli")]
+[node name="Characters" type="Node3D" parent="."]
+
+[node name="Ayaka" parent="Characters" instance=ExtResource("7_ayaka")]
+transform = Transform3D(10.5, 0, 0, 0, 10.5, 0, 0, 0, 10.5, -2.2, 0, 0)
+OutlineWidthScale = 1.8
+
+[node name="RaidenShogun" parent="Characters" unique_id=1110029233 instance=ExtResource("1_o5qli")]
 transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0.6036525, 0, 0.21492863)
+OutlineWidthScale = 1.8
+
+[node name="Ganyu" parent="Characters" instance=ExtResource("8_ganyu")]
+transform = Transform3D(1.25, 0, 0, 0, 1.25, 0, 0, 0, 1.25, 2.4, 0, 0)
 OutlineWidthScale = 1.8
 
 [node name="CharacterMaskPass" type="Node" parent="."]
 script = ExtResource("6_mask")
 SourceCameraPath = NodePath("../Camera3D")
-CharacterRootPath = NodePath("../RaidenShogun")
+CharacterRootPath = NodePath("../Characters")
 MaskCullLayer = 2
 ResolutionScale = 0.5
 Enabled = true

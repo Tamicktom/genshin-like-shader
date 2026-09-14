@@ -8,10 +8,10 @@ The shader stack is **opt-in** and **data-driven**. Character shading lives in `
 
 | Piece | Status |
 | --- | --- |
-| Main scene | `scenes/main.tscn` — lighting, ground, camera, Raiden instance |
-| Demo character | Raiden Shogun GLB under `assets/raiden-shogun/` |
-| Look data | `looks/raiden_shogun.tres` + shared presets under `materials/presets/` |
-| Toon shading | Applied via look table on the Raiden scene only |
+| Main scene | `scenes/main.tscn` — lighting, ground, camera, character lineup |
+| Demo characters | Raiden, Ayaka, Ganyu under `assets/` (lineup in `Characters`) |
+| Look data | `looks/{raiden_shogun,ayaka,ganyu}.tres` + shared presets under `materials/presets/` |
+| Toon shading | Applied via look tables on each character scene |
 | Outline | Inverted hull (albedo-tinted) + character-masked compositor depth Sobel (default on) |
 | Shadows | Orthogonal directional map, 8192 atlas, Ultra PCF |
 | Anti-aliasing | MSAA 4x + FXAA |
@@ -19,19 +19,23 @@ The shader stack is **opt-in** and **data-driven**. Character shading lives in `
 
 Engine: **Godot 4.7 .NET** (Forward Plus). Main scene is set in `project.godot`.
 
-The demo character slow-spins via `SpinY.cs` so lighting and outlines can be judged from every angle.
+The demo characters slow-spin via `SpinY.cs` so lighting and outlines can be judged from every angle.
 
 ## Project layout
 
 ```text
-assets/raiden-shogun/     Character model + textures
+assets/raiden-shogun/     Raiden model + textures
+assets/ayaka/             Ayaka model + textures
+assets/ganyu/             Ganyu model + textures
 looks/                    Per-character CharacterLook tables
 materials/presets/        Shared ToonPreset resources (face, hair, …)
 materials/textures/       Shared ramps (e.g. gold metallic GradientTexture1D)
 materials/compositor/     ToonOutlineCompositorEffect resource
 scenes/
-  main.tscn               Playable demo scene
+  main.tscn               Playable demo scene (character lineup)
   raiden-shogun.tscn      Character + look applicator + spin
+  ayaka.tscn              Character + look applicator + spin
+  ganyu.tscn              Character + look applicator + spin
 scripts/
   ApplyCharacterLook.cs   Opt-in look applicator
   CharacterMaskPass.cs    Half-res character coverage for outline compositor
