@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="CharacterLook" format=3]
+[gd_resource type="Resource" script_class="CharacterLook" format=3 uid="uid://p0skyufb2ag6"]
 
 [ext_resource type="Script" uid="uid://dy60j5beprd2r" path="res://scripts/resources/CharacterLook.cs" id="1_look"]
 [ext_resource type="Script" uid="uid://c1ikos2y5mner" path="res://scripts/resources/LookSlot.cs" id="2_slot"]
@@ -27,7 +27,6 @@ NamePatterns = PackedStringArray("*Body_0*", "*hair*")
 TexturePatterns = PackedStringArray("*Hair_Diffuse*")
 Preset = ExtResource("6_hair")
 DoubleSided = true
-IncludeInOutlineMask = true
 
 [sub_resource type="Resource" id="slot_body"]
 script = ExtResource("2_slot")
@@ -36,7 +35,6 @@ NamePatterns = PackedStringArray("*body*", "*Body_1*", "*Body_2*")
 TexturePatterns = PackedStringArray("*Body_Diffuse*")
 Preset = ExtResource("9_cloth")
 OutlineDepthBias = 0.003
-IncludeInOutlineMask = true
 
 [resource]
 script = ExtResource("1_look")

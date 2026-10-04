@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="CharacterLook" format=3]
+[gd_resource type="Resource" script_class="CharacterLook" format=3 uid="uid://boqwivi2cs7rv"]
 
 [ext_resource type="Script" uid="uid://dy60j5beprd2r" path="res://scripts/resources/CharacterLook.cs" id="1_look"]
 [ext_resource type="Script" uid="uid://c1ikos2y5mner" path="res://scripts/resources/LookSlot.cs" id="2_slot"]
@@ -27,7 +27,6 @@ SlotName = "HairAccessory"
 NamePatterns = PackedStringArray("*髮饰*", "*发饰*")
 Preset = ExtResource("6_hair")
 DoubleSided = true
-IncludeInOutlineMask = true
 
 [sub_resource type="Resource" id="slot_hair"]
 script = ExtResource("2_slot")
@@ -36,14 +35,12 @@ NamePatterns = PackedStringArray("*髮*", "*发*", "*前髮*")
 TexturePatterns = PackedStringArray("*发*", "*Ayaka_发*")
 Preset = ExtResource("6_hair")
 DoubleSided = true
-IncludeInOutlineMask = true
 
 [sub_resource type="Resource" id="slot_metal"]
 script = ExtResource("2_slot")
 SlotName = "Metal"
 NamePatterns = PackedStringArray("*神之眼*")
 Preset = ExtResource("8_metal")
-IncludeInOutlineMask = true
 
 [sub_resource type="Resource" id="slot_body"]
 script = ExtResource("2_slot")
@@ -52,7 +49,6 @@ NamePatterns = PackedStringArray("*肌*")
 TexturePatterns = PackedStringArray("*肌*", "*Ayaka_肌*")
 Preset = ExtResource("9_cloth")
 OutlineDepthBias = 0.003
-IncludeInOutlineMask = true
 
 [sub_resource type="Resource" id="slot_cloth"]
 script = ExtResource("2_slot")
@@ -61,7 +57,6 @@ NamePatterns = PackedStringArray("*服*", "*裙*", "*褲*", "*帶*", "*結*", "*
 TexturePatterns = PackedStringArray("*服*", "*Ayaka_服*")
 Preset = ExtResource("9_cloth")
 DoubleSided = true
-IncludeInOutlineMask = true
 
 [resource]
 script = ExtResource("1_look")
